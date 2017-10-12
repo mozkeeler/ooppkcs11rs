@@ -1,0 +1,12 @@
+[package]
+name = "ooppkcs11rs"
+version = "0.0.1"
+authors = ["David Keeler <mozkeeler@gmail.com>"]
+build = "build.rs"
+
+[build-dependencies]
+bindgen = "0.25.3"
+
+[lib]
+name = "ooppkcs11rs"
+crate-type = ["dylib"]
