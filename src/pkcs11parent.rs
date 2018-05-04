@@ -2,17 +2,26 @@
 #![allow(non_snake_case)]
 #![allow(unused)]
 
+use ipc_channel::ipc::{IpcOneShotServer, IpcReceiver, IpcSender};
+use std::io::Write;
+use std::ops::DerefMut;
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
-
-use ipc_channel::ipc::{self, IpcOneShotServer, IpcReceiver, IpcSender};
-use std::io::Write;
+use serde_json::from_str;
 
 use pkcs11;
 use pkcs11types::*;
 
+lazy_static! {
+    // NB: Acquire these in the order they're declared here.
+    static ref TX: Mutex<Option<IpcSender<pkcs11::Message>>> = Mutex::new(None);
+    static ref RX: Mutex<Option<IpcReceiver<pkcs11::Message>>> = Mutex::new(None);
+}
+
 extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
-    println!("C_Initialize");
+    println!("parent: C_Initialize");
+    let mut tx_guard = TX.lock().unwrap();
+    let mut rx_guard = RX.lock().unwrap();
     let mut child = Command::new("/home/keeler/src/ooppkcs11rs/target/debug/ooppkcs11rs")
         .stdin(Stdio::piped())
         .spawn()
@@ -39,15 +48,35 @@ extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
     tx.send(msg).unwrap();
     let msg_back = rx.recv().unwrap();
     println!("received back {:?}", msg_back);
+    *tx_guard = Some(tx);
+    *rx_guard = Some(rx);
     CKR_OK
 }
 extern "C" fn C_Finalize(pReserved: CK_VOID_PTR) -> CK_RV {
-    println!("C_Finalize");
-    CKR_FUNCTION_NOT_SUPPORTED
+    println!("parent: C_Finalize");
+    let mut tx_guard = TX.lock().unwrap();
+    let mut rx_guard = RX.lock().unwrap();
+    tx_guard.as_mut().unwrap().send(pkcs11::Message::new("C_Finalize")).unwrap();
+    let response = rx_guard.as_mut().unwrap().recv().unwrap();
+    println!("received {:?}", response);
+    CKR_OK
 }
 extern "C" fn C_GetInfo(pInfo: CK_INFO_PTR) -> CK_RV {
-    println!("C_GetInfo");
-    CKR_FUNCTION_NOT_SUPPORTED
+    println!("parent: C_GetInfo");
+    let mut tx_guard = TX.lock().unwrap();
+    let mut rx_guard = RX.lock().unwrap();
+    tx_guard.as_mut().unwrap().send(pkcs11::Message::new("C_GetInfo")).unwrap();
+    let response = rx_guard.as_mut().unwrap().recv().unwrap();
+    println!("received {:?}", response);
+    if response.name() == "ACK" {
+        let ck_info = from_str(response.payload()).unwrap();
+        unsafe {
+            *pInfo = ck_info;
+        }
+        CKR_OK
+    } else {
+        CKR_FUNCTION_NOT_SUPPORTED
+    }
 }
 extern "C" fn C_GetSlotList(
     tokenPresent: CK_BBOOL,

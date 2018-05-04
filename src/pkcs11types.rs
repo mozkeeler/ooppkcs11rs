@@ -13,7 +13,7 @@ pub type CK_ULONG_PTR = *mut CK_ULONG;
 pub type CK_VOID_PTR = *mut ::std::os::raw::c_void;
 pub type CK_VOID_PTR_PTR = *mut CK_VOID_PTR;
 #[repr(C)]
-#[derive(Debug, Copy)]
+#[derive(Debug, Copy, Serialize, Deserialize)]
 pub struct CK_VERSION {
     pub major: CK_BYTE,
     pub minor: CK_BYTE,
@@ -24,7 +24,7 @@ impl Clone for CK_VERSION {
     }
 }
 #[repr(C)]
-#[derive(Debug, Copy)]
+#[derive(Debug, Copy, Serialize, Deserialize)]
 pub struct CK_INFO {
     pub cryptokiVersion: CK_VERSION,
     pub manufacturerID: [CK_UTF8CHAR; 32usize],

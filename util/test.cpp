@@ -38,9 +38,10 @@ int main(int argc, char* argv[])
            "/libooppkcs11.so");
   if (SECMOD_AddNewModuleEx("Some Module", pathBuf, 0, 0, buf, nullptr)
   */
-  if (SECMOD_AddNewModuleEx("Some Module",
-                            "/home/keeler/src/ooppkcs11rs/target/debug/libooppkcs11rs.so",
-                            0, 0, buf, nullptr) != SECSuccess) {
+  const char* path = "/home/keeler/src/ooppkcs11rs/target/debug/libooppkcs11rs.so";
+  //const char* path = "/usr/lib64/libykcs11.so.1"; // YKCS11 isn't working?
+  //const char* path = "/usr/lib64/libnssckbi.so";
+  if (SECMOD_AddNewModuleEx("Some Module", path, 0, 0, buf, nullptr) != SECSuccess) {
     std::cout << "(test) SECMOD_AddNewModuleEx failed: ";
     std::cout << PR_ErrorToString(PR_GetError(), 0) << std::endl;
     return 1;
