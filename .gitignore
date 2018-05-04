@@ -2,3 +2,5 @@ target/
 **/*.rs.bk
 Cargo.lock
 **/.*.swp
+util/*.db
+util/test
