@@ -4,6 +4,7 @@
 
 use ipc_channel::ipc::{IpcOneShotServer, IpcReceiver, IpcSender};
 use serde_json::{from_str, to_string};
+use std::ffi::CStr;
 use std::io::Write;
 use std::ops::DerefMut;
 use std::process::{Command, Stdio};
@@ -43,7 +44,16 @@ extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
     let (rx, msg): (IpcReceiver<Response>, Response) = server.accept().unwrap();
     println!("child_server_name: '{}'", msg.args());
     let tx: IpcSender<Request> = IpcSender::connect(msg.args().to_owned()).unwrap();
-    let msg = Request::new("C_Initialize", String::new());
+    let args = if !pInitArgs.is_null() {
+        unsafe {
+            CStr::from_ptr((*pInitArgs).pReserved as *const i8)
+                .to_string_lossy()
+                .into_owned()
+        }
+    } else {
+        String::new()
+    };
+    let msg = Request::new("C_Initialize", args);
     tx.send(msg).unwrap();
     let msg_back = rx.recv().unwrap();
     println!("parent received {:?}", msg_back);
@@ -293,10 +303,18 @@ extern "C" fn C_CloseSession(hSession: CK_SESSION_HANDLE) -> CK_RV {
     println!("C_CloseSession");
     CKR_FUNCTION_NOT_SUPPORTED
 }
+
 extern "C" fn C_CloseAllSessions(slotID: CK_SLOT_ID) -> CK_RV {
-    println!("C_CloseAllSessions");
-    CKR_FUNCTION_NOT_SUPPORTED
+    println!("parent: C_CloseAllSessions");
+    let mut tx_guard = TX.lock().unwrap();
+    let mut rx_guard = RX.lock().unwrap();
+    let msg = Request::new("C_CloseAllSessions", to_string(&slotID).unwrap());
+    tx_guard.as_mut().unwrap().send(msg).unwrap();
+    let response = rx_guard.as_mut().unwrap().recv().unwrap();
+    println!("parent received {:?}", response);
+    response.status()
 }
+
 extern "C" fn C_GetSessionInfo(hSession: CK_SESSION_HANDLE, pInfo: CK_SESSION_INFO_PTR) -> CK_RV {
     println!("C_GetSessionInfo");
     CKR_FUNCTION_NOT_SUPPORTED
@@ -363,15 +381,17 @@ extern "C" fn C_GetObjectSize(
     println!("C_GetObjectSize");
     CKR_FUNCTION_NOT_SUPPORTED
 }
+
 extern "C" fn C_GetAttributeValue(
     hSession: CK_SESSION_HANDLE,
     hObject: CK_OBJECT_HANDLE,
     pTemplate: CK_ATTRIBUTE_PTR,
     ulCount: CK_ULONG,
 ) -> CK_RV {
-    println!("C_GetAttributeValue");
+    println!("parent: C_GetAttributeValue");
     CKR_FUNCTION_NOT_SUPPORTED
 }
+
 extern "C" fn C_SetAttributeValue(
     hSession: CK_SESSION_HANDLE,
     hObject: CK_OBJECT_HANDLE,
@@ -438,7 +458,7 @@ extern "C" fn C_FindObjects(
 }
 
 extern "C" fn C_FindObjectsFinal(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    println!("C_FindObjectsFinal");
+    println!("parent: C_FindObjectsFinal");
     let mut tx_guard = TX.lock().unwrap();
     let mut rx_guard = RX.lock().unwrap();
     let msg = Request::new("C_FindObjectsFinal", to_string(&hSession).unwrap());

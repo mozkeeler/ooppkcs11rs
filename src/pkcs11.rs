@@ -1,3 +1,7 @@
+// Why do I need these here when I don't need them elsewhere?
+use std::os;
+use std::ptr;
+
 use pkcs11types::*;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -67,21 +71,28 @@ pub struct COpenSessionArgs {
 #[derive(Deserialize, Serialize)]
 pub struct Attribute {
     pub type_: CK_ATTRIBUTE_TYPE,
-    pub value: Vec<u8>,
+    pub value: Option<Vec<u8>>,
+    pub len: CK_ULONG,
 }
 
 impl Attribute {
     pub fn from_raw(attribute: CK_ATTRIBUTE) -> Attribute {
-        let mut value = Vec::with_capacity(attribute.ulValueLen as usize);
-        let byte_ptr = attribute.pValue as *const u8;
-        unsafe {
-            for i in 0..attribute.ulValueLen {
-                value.push(*byte_ptr.offset(i as isize));
+        let value = if !attribute.pValue.is_null() {
+            let byte_ptr = attribute.pValue as *const u8;
+            let mut value = Vec::with_capacity(attribute.ulValueLen as usize);
+            unsafe {
+                for i in 0..attribute.ulValueLen {
+                    value.push(*byte_ptr.offset(i as isize));
+                }
             }
-        }
+            Some(value)
+        } else {
+            None
+        };
         Attribute {
             type_: attribute.type_,
             value,
+            len: attribute.ulValueLen,
         }
     }
 
@@ -89,10 +100,14 @@ impl Attribute {
     // could do this by adding a lifetime parameter to CK_ATTRIBUTE, but I don't want to change that
     // type since it's part of the PKCS#11 API. Could we use a helper/wrapper in some way?
     pub fn to_raw(&self) -> CK_ATTRIBUTE {
+        let ptr = match self.value {
+            Some(ref value) => value.as_ptr() as CK_VOID_PTR,
+            None => ptr::null::<os::raw::c_void>() as CK_VOID_PTR,
+        };
         CK_ATTRIBUTE {
             type_: self.type_,
-            pValue: self.value.as_ptr() as CK_VOID_PTR,
-            ulValueLen: self.value.len() as CK_ULONG,
+            pValue: ptr,
+            ulValueLen: self.len,
         }
     }
 }
@@ -108,4 +123,11 @@ pub struct CFindObjectsArgs {
     pub session_handle: CK_SESSION_HANDLE,
     pub objects: Vec<CK_OBJECT_HANDLE>,
     pub max_objects: CK_ULONG,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct CGetAttributeValueArgs {
+    pub session_handle: CK_SESSION_HANDLE,
+    pub object_handle: CK_OBJECT_HANDLE,
+    pub template: Vec<Attribute>,
 }

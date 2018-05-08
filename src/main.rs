@@ -56,11 +56,8 @@ fn main() {
     if msg.function() != "C_Initialize" {
         panic!("unexpected first message from parent");
     }
-    let mut module: Container<Pkcs11Module> = unsafe {
-        //Container::load("/usr/lib64/libykcs11.so.1") // YKCS11 is failing?
-        //Container::load("/usr/lib64/libnssckbi.so")
-        Container::load("./libnssckbi.so")
-    }.unwrap();
+    println!("loading library at '{}'", msg.args());
+    let module: Container<Pkcs11Module> = unsafe { Container::load(msg.args()) }.unwrap();
     let mut function_list_ptr: CK_FUNCTION_LIST_PTR = std::ptr::null();
     module.C_GetFunctionList(&mut function_list_ptr);
     let result = unsafe {
@@ -96,6 +93,7 @@ fn main() {
             "C_FindObjectsInit" => c_find_objects_init(&tx, msg, function_list_ptr),
             "C_FindObjects" => c_find_objects(&tx, msg, function_list_ptr),
             "C_FindObjectsFinal" => c_find_objects_final(&tx, msg, function_list_ptr),
+            "C_CloseAllSessions" => c_close_all_sessions(&tx, msg, function_list_ptr),
             _ => {
                 let msg_back = Response::new(CKR_FUNCTION_NOT_SUPPORTED, String::new());
                 tx.send(msg_back).unwrap();
@@ -306,5 +304,11 @@ fn c_find_objects(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_P
 fn c_find_objects_final(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_PTR) {
     let session_handle: CK_SESSION_HANDLE = from_str(msg.args()).unwrap();
     let result = unsafe { (*fs).C_FindObjectsFinal.unwrap()(session_handle) };
+    tx.send(Response::new(result, String::new())).unwrap();
+}
+
+fn c_close_all_sessions(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_PTR) {
+    let slot_id: CK_SLOT_ID = from_str(msg.args()).unwrap();
+    let result = unsafe { (*fs).C_CloseAllSessions.unwrap()(slot_id) };
     tx.send(Response::new(result, String::new())).unwrap();
 }

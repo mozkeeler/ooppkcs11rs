@@ -9,18 +9,19 @@
 #include "nss.h"
 #include "prerror.h"
 #include "secmod.h"
+#include "pk11pub.h"
+#include "cert.h"
 
 int main(int argc, char* argv[])
 {
-  if (NSS_InitReadWrite(".") != SECSuccess) {
-    std::cout << "(test) NSS_Init failed: " << PR_ErrorToString(PR_GetError(), 0);
+  if (NSS_Initialize("sql:.", "", "", SECMOD_DB, NSS_INIT_NOROOTINIT | NSS_INIT_NOCERTDB) != SECSuccess) {
+    std::cout << "(test) NSS_Initialize failed: " << PR_ErrorToString(PR_GetError(), 0);
     std::cout << std::endl;
     return 1;
   }
 
   char buf[64];
-  if (snprintf(buf, sizeof(buf), "%s",
-               "/usr/lib64/libykcs11.so.1") >= sizeof(buf)) {
+  if (snprintf(buf, sizeof(buf), "%s", "./libnssckbi.so") >= sizeof(buf)) {
     std::cout << "(test) not enough buffer space?" << std::endl;
     return 1;
   }
@@ -45,6 +46,15 @@ int main(int argc, char* argv[])
     std::cout << "(test) SECMOD_AddNewModuleEx failed: ";
     std::cout << PR_ErrorToString(PR_GetError(), 0) << std::endl;
     return 1;
+  }
+
+  CERTCertList* certs = PK11_ListCerts(PK11CertListUnique, nullptr);
+  if (!certs) {
+    std::cout << "(test) PK11_ListCerts failed: ";
+    std::cout << PR_ErrorToString(PR_GetError(), 0) << std::endl;
+  } else {
+    std::cout << "maybe found some certs" << std::endl;
+    CERT_DestroyCertList(certs);
   }
 
   if (NSS_Shutdown() != SECSuccess) {
