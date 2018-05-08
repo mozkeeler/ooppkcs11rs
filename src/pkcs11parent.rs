@@ -3,19 +3,19 @@
 #![allow(unused)]
 
 use ipc_channel::ipc::{IpcOneShotServer, IpcReceiver, IpcSender};
+use serde_json::{from_str, to_string};
 use std::io::Write;
 use std::ops::DerefMut;
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
-use serde_json::from_str;
 
-use pkcs11;
+use pkcs11::*;
 use pkcs11types::*;
 
 lazy_static! {
     // NB: Acquire these in the order they're declared here.
-    static ref TX: Mutex<Option<IpcSender<pkcs11::Message>>> = Mutex::new(None);
-    static ref RX: Mutex<Option<IpcReceiver<pkcs11::Message>>> = Mutex::new(None);
+    static ref TX: Mutex<Option<IpcSender<Request>>> = Mutex::new(None);
+    static ref RX: Mutex<Option<IpcReceiver<Response>>> = Mutex::new(None);
 }
 
 extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
@@ -26,8 +26,7 @@ extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
         .stdin(Stdio::piped())
         .spawn()
         .expect("failed to start ooppkcs11rs");
-    let (server, name): (IpcOneShotServer<pkcs11::Message>, String) =
-        IpcOneShotServer::new().unwrap();
+    let (server, name): (IpcOneShotServer<Response>, String) = IpcOneShotServer::new().unwrap();
     {
         let mut stdin = child.stdin.as_mut().expect("failed to open child.stdin");
         println!("sending server name '{}' to child", name);
@@ -41,67 +40,189 @@ extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
             .expect("failed to send null terminator to child");
     }
     println!("wrote server name to child");
-    let (rx, msg): (IpcReceiver<pkcs11::Message>, pkcs11::Message) = server.accept().unwrap();
-    println!("child_server_name: '{}'", msg.name());
-    let tx: IpcSender<pkcs11::Message> = IpcSender::connect(msg.name().to_owned()).unwrap();
-    let msg = pkcs11::Message::new("C_Initialize");
+    let (rx, msg): (IpcReceiver<Response>, Response) = server.accept().unwrap();
+    println!("child_server_name: '{}'", msg.args());
+    let tx: IpcSender<Request> = IpcSender::connect(msg.args().to_owned()).unwrap();
+    let msg = Request::new("C_Initialize", String::new());
     tx.send(msg).unwrap();
     let msg_back = rx.recv().unwrap();
-    println!("received back {:?}", msg_back);
+    println!("parent received {:?}", msg_back);
     *tx_guard = Some(tx);
     *rx_guard = Some(rx);
-    CKR_OK
+    msg_back.status()
 }
+
 extern "C" fn C_Finalize(pReserved: CK_VOID_PTR) -> CK_RV {
     println!("parent: C_Finalize");
     let mut tx_guard = TX.lock().unwrap();
     let mut rx_guard = RX.lock().unwrap();
-    tx_guard.as_mut().unwrap().send(pkcs11::Message::new("C_Finalize")).unwrap();
+    tx_guard
+        .as_mut()
+        .unwrap()
+        .send(Request::new("C_Finalize", String::new()))
+        .unwrap();
     let response = rx_guard.as_mut().unwrap().recv().unwrap();
-    println!("received {:?}", response);
-    CKR_OK
+    println!("parent received {:?}", response);
+    response.status()
 }
+
 extern "C" fn C_GetInfo(pInfo: CK_INFO_PTR) -> CK_RV {
     println!("parent: C_GetInfo");
     let mut tx_guard = TX.lock().unwrap();
     let mut rx_guard = RX.lock().unwrap();
-    tx_guard.as_mut().unwrap().send(pkcs11::Message::new("C_GetInfo")).unwrap();
+    tx_guard
+        .as_mut()
+        .unwrap()
+        .send(Request::new("C_GetInfo", String::new()))
+        .unwrap();
     let response = rx_guard.as_mut().unwrap().recv().unwrap();
-    println!("received {:?}", response);
-    if response.name() == "ACK" {
-        let ck_info = from_str(response.payload()).unwrap();
+    println!("parent received {:?}", response);
+    if response.status() == CKR_OK {
+        let ck_info = from_str(response.args()).unwrap();
         unsafe {
             *pInfo = ck_info;
         }
         CKR_OK
     } else {
-        CKR_FUNCTION_NOT_SUPPORTED
+        response.status()
     }
 }
+
 extern "C" fn C_GetSlotList(
     tokenPresent: CK_BBOOL,
     pSlotList: CK_SLOT_ID_PTR,
     pulCount: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("C_GetSlotList");
-    CKR_FUNCTION_NOT_SUPPORTED
+    println!("parent: C_GetSlotList");
+    let mut tx_guard = TX.lock().unwrap();
+    let mut rx_guard = RX.lock().unwrap();
+    let slot_list = if pSlotList.is_null() {
+        None
+    } else {
+        Some(Vec::new())
+    };
+    // Right now we use the same struct in both directions, so we fill this out with
+    // not-entirely-meaningful data. Maybe this isn't the best and we should have e.g.
+    // `CGetSlotListArgsIn`/`CGetSlotListArgsOut` or something.
+    let slot_count = if pSlotList.is_null() {
+        0
+    } else {
+        unsafe { *pulCount as usize }
+    };
+    let args = CGetSlotListArgs {
+        token_present: tokenPresent != 0,
+        slot_list,
+        slot_count,
+    };
+    let msg = Request::new("C_GetSlotList", to_string(&args).unwrap());
+    tx_guard.as_mut().unwrap().send(msg).unwrap();
+    let response = rx_guard.as_mut().unwrap().recv().unwrap();
+    println!("parent received {:?}", response);
+    if response.status() == CKR_OK {
+        let mut result: CGetSlotListArgs = from_str(response.args()).unwrap();
+        unsafe {
+            *pulCount = result.slot_count as u64;
+            if !pSlotList.is_null() {
+                let ids = match result.slot_list.take() {
+                    Some(ids) => ids,
+                    None => return CKR_GENERAL_ERROR,
+                };
+                for i in 0..result.slot_count {
+                    *pSlotList.offset(i as isize) = ids[i];
+                }
+            }
+        }
+        CKR_OK
+    } else {
+        response.status()
+    }
 }
+
 extern "C" fn C_GetSlotInfo(slotID: CK_SLOT_ID, pInfo: CK_SLOT_INFO_PTR) -> CK_RV {
-    println!("C_GetSlotInfo");
-    CKR_FUNCTION_NOT_SUPPORTED
+    println!("parent: C_GetSlotInfo");
+    let mut tx_guard = TX.lock().unwrap();
+    let mut rx_guard = RX.lock().unwrap();
+    let msg = Request::new("C_GetSlotInfo", to_string(&slotID).unwrap());
+    tx_guard.as_mut().unwrap().send(msg).unwrap();
+    let response = rx_guard.as_mut().unwrap().recv().unwrap();
+    println!("parent received {:?}", response);
+    if response.status() == CKR_OK {
+        let slot_info = from_str(response.args()).unwrap();
+        unsafe {
+            *pInfo = slot_info;
+        }
+        CKR_OK
+    } else {
+        response.status()
+    }
 }
+
 extern "C" fn C_GetTokenInfo(slotID: CK_SLOT_ID, pInfo: CK_TOKEN_INFO_PTR) -> CK_RV {
-    println!("C_GetTokenInfo");
-    CKR_FUNCTION_NOT_SUPPORTED
+    println!("parent: C_GetTokenInfo");
+    let mut tx_guard = TX.lock().unwrap();
+    let mut rx_guard = RX.lock().unwrap();
+    let msg = Request::new("C_GetTokenInfo", to_string(&slotID).unwrap());
+    tx_guard.as_mut().unwrap().send(msg).unwrap();
+    let response = rx_guard.as_mut().unwrap().recv().unwrap();
+    println!("parent received {:?}", response);
+    if response.status() == CKR_OK {
+        let token_info = from_str(response.args()).unwrap();
+        unsafe {
+            *pInfo = token_info;
+        }
+        CKR_OK
+    } else {
+        response.status()
+    }
 }
+
 extern "C" fn C_GetMechanismList(
     slotID: CK_SLOT_ID,
     pMechanismList: CK_MECHANISM_TYPE_PTR,
     pulCount: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("C_GetMechanismList");
-    CKR_FUNCTION_NOT_SUPPORTED
+    println!("parent: C_GetMechanismList");
+    let mut tx_guard = TX.lock().unwrap();
+    let mut rx_guard = RX.lock().unwrap();
+    let mechanism_list = if pMechanismList.is_null() {
+        None
+    } else {
+        Some(Vec::new())
+    };
+    let mechanism_count = if pMechanismList.is_null() {
+        0
+    } else {
+        unsafe { *pulCount as usize }
+    };
+    let args = CGetMechanismListArgs {
+        slot_id: slotID,
+        mechanism_list,
+        mechanism_count,
+    };
+    let msg = Request::new("C_GetMechanismList", to_string(&args).unwrap());
+    tx_guard.as_mut().unwrap().send(msg).unwrap();
+    let response = rx_guard.as_mut().unwrap().recv().unwrap();
+    println!("parent received {:?}", response);
+    if response.status() == CKR_OK {
+        let mut result: CGetMechanismListArgs = from_str(response.args()).unwrap();
+        unsafe {
+            *pulCount = result.mechanism_count as u64;
+            if !pMechanismList.is_null() {
+                let ids = match result.mechanism_list.take() {
+                    Some(ids) => ids,
+                    None => return CKR_GENERAL_ERROR,
+                };
+                for i in 0..result.mechanism_count {
+                    *pMechanismList.offset(i as isize) = ids[i];
+                }
+            }
+        }
+        CKR_OK
+    } else {
+        response.status()
+    }
 }
+
 extern "C" fn C_GetMechanismInfo(
     slotID: CK_SLOT_ID,
     type_: CK_MECHANISM_TYPE,

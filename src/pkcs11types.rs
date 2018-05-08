@@ -12,6 +12,10 @@ pub type CK_UTF8CHAR_PTR = *mut CK_UTF8CHAR;
 pub type CK_ULONG_PTR = *mut CK_ULONG;
 pub type CK_VOID_PTR = *mut ::std::os::raw::c_void;
 pub type CK_VOID_PTR_PTR = *mut CK_VOID_PTR;
+
+pub const CK_TRUE: CK_BYTE = 1;
+pub const CK_FALSE: CK_BYTE = 0;
+
 #[repr(C)]
 #[derive(Debug, Copy, Serialize, Deserialize)]
 pub struct CK_VERSION {
@@ -43,8 +47,11 @@ pub type CK_NOTIFICATION = CK_ULONG;
 pub type CK_SLOT_ID = CK_ULONG;
 pub type CK_SLOT_ID_PTR = *mut CK_SLOT_ID;
 #[repr(C)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct CK_SLOT_INFO {
-    pub slotDescription: [CK_UTF8CHAR; 64usize],
+    // We're cheating here because derive only goes up to 32 for some reason.
+    pub slotDescription1: [CK_UTF8CHAR; 32usize],
+    pub slotDescription2: [CK_UTF8CHAR; 32usize],
     pub manufacturerID: [CK_UTF8CHAR; 32usize],
     pub flags: CK_FLAGS,
     pub hardwareVersion: CK_VERSION,
@@ -52,7 +59,7 @@ pub struct CK_SLOT_INFO {
 }
 pub type CK_SLOT_INFO_PTR = *mut CK_SLOT_INFO;
 #[repr(C)]
-#[derive(Debug, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct CK_TOKEN_INFO {
     pub label: [CK_UTF8CHAR; 32usize],
     pub manufacturerID: [CK_UTF8CHAR; 32usize],
@@ -72,11 +79,6 @@ pub struct CK_TOKEN_INFO {
     pub hardwareVersion: CK_VERSION,
     pub firmwareVersion: CK_VERSION,
     pub utcTime: [CK_CHAR; 16usize],
-}
-impl Clone for CK_TOKEN_INFO {
-    fn clone(&self) -> Self {
-        *self
-    }
 }
 pub type CK_TOKEN_INFO_PTR = *mut CK_TOKEN_INFO;
 pub type CK_SESSION_HANDLE = CK_ULONG;
@@ -690,4 +692,5 @@ pub type CK_FUNCTION_LIST_PTR = *const CK_FUNCTION_LIST;
 pub type CK_FUNCTION_LIST_PTR_PTR = *mut CK_FUNCTION_LIST_PTR;
 
 pub const CKR_OK: CK_RV = 0;
+pub const CKR_GENERAL_ERROR: CK_RV = 5;
 pub const CKR_FUNCTION_NOT_SUPPORTED: CK_RV = 84;
