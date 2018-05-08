@@ -92,6 +92,7 @@ fn main() {
             "C_GetSlotInfo" => c_get_slot_info(&tx, msg, function_list_ptr),
             "C_GetTokenInfo" => c_get_token_info(&tx, msg, function_list_ptr),
             "C_GetMechanismList" => c_get_mechanism_list(&tx, msg, function_list_ptr),
+            "C_OpenSession" => c_open_session(&tx, msg, function_list_ptr),
             _ => {
                 let msg_back = Response::new(CKR_FUNCTION_NOT_SUPPORTED, String::new());
                 tx.send(msg_back).unwrap();
@@ -230,6 +231,26 @@ fn c_get_mechanism_list(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_
             },
             &mut None => {}
         }
+        Response::new(CKR_OK, to_string(&args).unwrap())
+    } else {
+        Response::new(result, String::new())
+    };
+    tx.send(msg_back).unwrap();
+}
+
+fn c_open_session(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_PTR) {
+    let mut args: COpenSessionArgs = from_str(msg.args()).unwrap();
+    let result = unsafe {
+        (*fs).C_OpenSession.unwrap()(
+            args.slot_id,
+            args.flags,
+            std::ptr::null::<std::os::raw::c_void>() as CK_VOID_PTR,
+            None,
+            &mut args.session_handle,
+        )
+    };
+    println!("C_OpenSession: {}", result);
+    let msg_back = if result == CKR_OK {
         Response::new(CKR_OK, to_string(&args).unwrap())
     } else {
         Response::new(result, String::new())

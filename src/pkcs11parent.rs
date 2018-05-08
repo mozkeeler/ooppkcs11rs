@@ -258,6 +258,7 @@ extern "C" fn C_SetPIN(
     println!("C_SetPIN");
     CKR_FUNCTION_NOT_SUPPORTED
 }
+
 extern "C" fn C_OpenSession(
     slotID: CK_SLOT_ID,
     flags: CK_FLAGS,
@@ -265,9 +266,29 @@ extern "C" fn C_OpenSession(
     Notify: CK_NOTIFY,
     phSession: CK_SESSION_HANDLE_PTR,
 ) -> CK_RV {
-    println!("C_OpenSession");
-    CKR_FUNCTION_NOT_SUPPORTED
+    println!("parent: C_OpenSession");
+    let mut tx_guard = TX.lock().unwrap();
+    let mut rx_guard = RX.lock().unwrap();
+    let args = COpenSessionArgs {
+        slot_id: slotID,
+        flags,
+        session_handle: 0,
+    };
+    let msg = Request::new("C_OpenSession", to_string(&args).unwrap());
+    tx_guard.as_mut().unwrap().send(msg).unwrap();
+    let response = rx_guard.as_mut().unwrap().recv().unwrap();
+    println!("parent received {:?}", response);
+    if response.status() == CKR_OK {
+        let args: COpenSessionArgs = from_str(response.args()).unwrap();
+        unsafe {
+            *phSession = args.session_handle;
+        }
+        CKR_OK
+    } else {
+        response.status()
+    }
 }
+
 extern "C" fn C_CloseSession(hSession: CK_SESSION_HANDLE) -> CK_RV {
     println!("C_CloseSession");
     CKR_FUNCTION_NOT_SUPPORTED
