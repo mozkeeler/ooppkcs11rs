@@ -53,7 +53,11 @@ int main(int argc, char* argv[])
     std::cout << "(test) PK11_ListCerts failed: ";
     std::cout << PR_ErrorToString(PR_GetError(), 0) << std::endl;
   } else {
-    std::cout << "maybe found some certs" << std::endl;
+    for (CERTCertListNode* n = CERT_LIST_HEAD(certs); !CERT_LIST_END(n, certs);
+         n = CERT_LIST_NEXT(n)) {
+      std::cout << "'" << n->cert->subjectName << "' issued by '";
+      std::cout << n->cert->issuerName << "'" << std::endl;
+    }
     CERT_DestroyCertList(certs);
   }
 

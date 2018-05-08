@@ -110,6 +110,24 @@ impl Attribute {
             ulValueLen: self.len,
         }
     }
+
+    pub fn into_raw(&self, attribute: *mut CK_ATTRIBUTE) {
+        match self.value {
+            Some(ref value) => unsafe {
+                let ptr = (*attribute).pValue as *mut u8;
+                if !ptr.is_null() {
+                    for i in 0..self.len {
+                        (*ptr.offset(i as isize)) = value[i as usize];
+                    }
+                }
+            },
+            None => {}
+        }
+        unsafe {
+            (*attribute).type_ = self.type_;
+            (*attribute).ulValueLen = self.len;
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize)]

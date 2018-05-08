@@ -94,6 +94,7 @@ fn main() {
             "C_FindObjects" => c_find_objects(&tx, msg, function_list_ptr),
             "C_FindObjectsFinal" => c_find_objects_final(&tx, msg, function_list_ptr),
             "C_CloseAllSessions" => c_close_all_sessions(&tx, msg, function_list_ptr),
+            "C_GetAttributeValue" => c_get_attribute_value(&tx, msg, function_list_ptr),
             _ => {
                 let msg_back = Response::new(CKR_FUNCTION_NOT_SUPPORTED, String::new());
                 tx.send(msg_back).unwrap();
@@ -311,4 +312,31 @@ fn c_close_all_sessions(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_
     let slot_id: CK_SLOT_ID = from_str(msg.args()).unwrap();
     let result = unsafe { (*fs).C_CloseAllSessions.unwrap()(slot_id) };
     tx.send(Response::new(result, String::new())).unwrap();
+}
+
+fn c_get_attribute_value(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_PTR) {
+    let mut args: CGetAttributeValueArgs = from_str(msg.args()).unwrap();
+    // NB: currently args must outlive template here (things in template point to data in args).
+    let mut template = Vec::with_capacity(args.template.len());
+    for t in args.template {
+        template.push(t.to_raw());
+    }
+    let result = unsafe {
+        (*fs).C_GetAttributeValue.unwrap()(
+            args.session_handle,
+            args.object_handle,
+            template.as_mut_ptr(),
+            template.len() as CK_ULONG,
+        )
+    };
+    if result == CKR_OK {
+        args.template = Vec::new();
+        for attribute in template {
+            args.template.push(Attribute::from_raw(attribute));
+        }
+        tx.send(Response::new(CKR_OK, to_string(&args).unwrap()))
+            .unwrap();
+    } else {
+        tx.send(Response::new(result, String::new())).unwrap();
+    }
 }

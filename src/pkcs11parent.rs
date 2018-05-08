@@ -389,7 +389,32 @@ extern "C" fn C_GetAttributeValue(
     ulCount: CK_ULONG,
 ) -> CK_RV {
     println!("parent: C_GetAttributeValue");
-    CKR_FUNCTION_NOT_SUPPORTED
+    let mut tx_guard = TX.lock().unwrap();
+    let mut rx_guard = RX.lock().unwrap();
+    let mut args = CGetAttributeValueArgs {
+        session_handle: hSession,
+        object_handle: hObject,
+        template: Vec::new(),
+    };
+    unsafe {
+        for i in 0..ulCount {
+            args.template
+                .push(Attribute::from_raw(*pTemplate.offset(i as isize)));
+        }
+    }
+    let msg = Request::new("C_GetAttributeValue", to_string(&args).unwrap());
+    tx_guard.as_mut().unwrap().send(msg).unwrap();
+    let response = rx_guard.as_mut().unwrap().recv().unwrap();
+    println!("parent received {:?}", response);
+    if response.status() == CKR_OK {
+        let args: CGetAttributeValueArgs = from_str(response.args()).unwrap();
+        unsafe {
+            for i in 0..ulCount {
+                args.template[i as usize].into_raw(pTemplate.offset(i as isize));
+            }
+        }
+    }
+    response.status()
 }
 
 extern "C" fn C_SetAttributeValue(
