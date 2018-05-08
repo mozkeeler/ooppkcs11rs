@@ -381,27 +381,73 @@ extern "C" fn C_SetAttributeValue(
     println!("C_SetAttributeValue");
     CKR_FUNCTION_NOT_SUPPORTED
 }
+
 extern "C" fn C_FindObjectsInit(
     hSession: CK_SESSION_HANDLE,
     pTemplate: CK_ATTRIBUTE_PTR,
     ulCount: CK_ULONG,
 ) -> CK_RV {
-    println!("C_FindObjectsInit");
-    CKR_FUNCTION_NOT_SUPPORTED
+    println!("parent: C_FindObjectsInit");
+    let mut tx_guard = TX.lock().unwrap();
+    let mut rx_guard = RX.lock().unwrap();
+    let mut args = CFindObjectsInitArgs {
+        session_handle: hSession,
+        template: Vec::new(),
+    };
+    unsafe {
+        for i in 0..ulCount {
+            args.template
+                .push(Attribute::from_raw(*pTemplate.offset(i as isize)));
+        }
+    }
+    let msg = Request::new("C_FindObjectsInit", to_string(&args).unwrap());
+    tx_guard.as_mut().unwrap().send(msg).unwrap();
+    let response = rx_guard.as_mut().unwrap().recv().unwrap();
+    println!("parent received {:?}", response);
+    response.status()
 }
+
 extern "C" fn C_FindObjects(
     hSession: CK_SESSION_HANDLE,
     phObject: CK_OBJECT_HANDLE_PTR,
     ulMaxObjectCount: CK_ULONG,
     pulObjectCount: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("C_FindObjects");
-    CKR_FUNCTION_NOT_SUPPORTED
+    println!("parent: C_FindObjects");
+    let mut tx_guard = TX.lock().unwrap();
+    let mut rx_guard = RX.lock().unwrap();
+    let mut args = CFindObjectsArgs {
+        session_handle: hSession,
+        objects: Vec::new(),
+        max_objects: ulMaxObjectCount,
+    };
+    let msg = Request::new("C_FindObjects", to_string(&args).unwrap());
+    tx_guard.as_mut().unwrap().send(msg).unwrap();
+    let response = rx_guard.as_mut().unwrap().recv().unwrap();
+    println!("parent received {:?}", response);
+    let args: CFindObjectsArgs = from_str(response.args()).unwrap();
+    if response.status() == CKR_OK {
+        unsafe {
+            for i in 0..args.objects.len() {
+                *phObject.offset(i as isize) = args.objects[i];
+            }
+            *pulObjectCount = args.objects.len() as CK_ULONG;
+        }
+    }
+    response.status()
 }
+
 extern "C" fn C_FindObjectsFinal(hSession: CK_SESSION_HANDLE) -> CK_RV {
     println!("C_FindObjectsFinal");
-    CKR_FUNCTION_NOT_SUPPORTED
+    let mut tx_guard = TX.lock().unwrap();
+    let mut rx_guard = RX.lock().unwrap();
+    let msg = Request::new("C_FindObjectsFinal", to_string(&hSession).unwrap());
+    tx_guard.as_mut().unwrap().send(msg).unwrap();
+    let response = rx_guard.as_mut().unwrap().recv().unwrap();
+    println!("parent received {:?}", response);
+    response.status()
 }
+
 extern "C" fn C_EncryptInit(
     hSession: CK_SESSION_HANDLE,
     pMechanism: CK_MECHANISM_PTR,

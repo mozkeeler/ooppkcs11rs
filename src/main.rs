@@ -93,6 +93,9 @@ fn main() {
             "C_GetTokenInfo" => c_get_token_info(&tx, msg, function_list_ptr),
             "C_GetMechanismList" => c_get_mechanism_list(&tx, msg, function_list_ptr),
             "C_OpenSession" => c_open_session(&tx, msg, function_list_ptr),
+            "C_FindObjectsInit" => c_find_objects_init(&tx, msg, function_list_ptr),
+            "C_FindObjects" => c_find_objects(&tx, msg, function_list_ptr),
+            "C_FindObjectsFinal" => c_find_objects_final(&tx, msg, function_list_ptr),
             _ => {
                 let msg_back = Response::new(CKR_FUNCTION_NOT_SUPPORTED, String::new());
                 tx.send(msg_back).unwrap();
@@ -256,4 +259,52 @@ fn c_open_session(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_P
         Response::new(result, String::new())
     };
     tx.send(msg_back).unwrap();
+}
+
+fn c_find_objects_init(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_PTR) {
+    let args: CFindObjectsInitArgs = from_str(msg.args()).unwrap();
+    // NB: currently args must outlive template here (things in template point to data in args).
+    let mut template = Vec::with_capacity(args.template.len());
+    for t in args.template {
+        template.push(t.to_raw());
+    }
+    // So here's a fun question: does the API require that the memory referred to in template be
+    // valid for the lifetime of the find operation? The spec doesn't seem to specify this.
+    let result = unsafe {
+        (*fs).C_FindObjectsInit.unwrap()(
+            args.session_handle,
+            template.as_mut_ptr(),
+            template.len() as CK_ULONG,
+        )
+    };
+    tx.send(Response::new(result, String::new())).unwrap();
+}
+
+fn c_find_objects(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_PTR) {
+    let mut args: CFindObjectsArgs = from_str(msg.args()).unwrap();
+    args.objects.reserve(args.max_objects as usize);
+    let mut object_count = 0;
+    let result = unsafe {
+        (*fs).C_FindObjects.unwrap()(
+            args.session_handle,
+            args.objects.as_mut_ptr(),
+            args.max_objects,
+            &mut object_count,
+        )
+    };
+    if result == CKR_OK {
+        unsafe {
+            args.objects.set_len(object_count as usize);
+        }
+        tx.send(Response::new(CKR_OK, to_string(&args).unwrap()))
+            .unwrap();
+    } else {
+        tx.send(Response::new(result, String::new())).unwrap();
+    }
+}
+
+fn c_find_objects_final(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_PTR) {
+    let session_handle: CK_SESSION_HANDLE = from_str(msg.args()).unwrap();
+    let result = unsafe { (*fs).C_FindObjectsFinal.unwrap()(session_handle) };
+    tx.send(Response::new(result, String::new())).unwrap();
 }
