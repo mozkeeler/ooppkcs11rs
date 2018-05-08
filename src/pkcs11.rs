@@ -45,14 +45,21 @@ impl Response {
 
 #[derive(Deserialize, Serialize)]
 pub struct CGetSlotListArgs {
-    pub token_present: bool,
+    pub token_present: CK_BBOOL,
     pub slot_list: Option<Vec<CK_SLOT_ID>>,
-    pub slot_count: usize,
+    pub slot_count: CK_ULONG,
 }
 
 #[derive(Deserialize, Serialize)]
 pub struct CGetMechanismListArgs {
     pub slot_id: CK_SLOT_ID,
     pub mechanism_list: Option<Vec<CK_MECHANISM_TYPE>>,
-    pub mechanism_count: usize,
+    pub mechanism_count: CK_ULONG,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct COpenSessionArgs {
+    pub slot_id: CK_SLOT_ID,
+    pub flags: CK_FLAGS,
+    pub session_handle: CK_SESSION_HANDLE,
 }

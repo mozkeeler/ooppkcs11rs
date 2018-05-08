@@ -91,6 +91,7 @@ fn main() {
             "C_GetSlotList" => c_get_slot_list(&tx, msg, function_list_ptr),
             "C_GetSlotInfo" => c_get_slot_info(&tx, msg, function_list_ptr),
             "C_GetTokenInfo" => c_get_token_info(&tx, msg, function_list_ptr),
+            "C_GetMechanismList" => c_get_mechanism_list(&tx, msg, function_list_ptr),
             _ => {
                 let msg_back = Response::new(CKR_FUNCTION_NOT_SUPPORTED, String::new());
                 tx.send(msg_back).unwrap();
@@ -125,42 +126,28 @@ fn c_get_info(tx: &IpcSender<Response>, fs: CK_FUNCTION_LIST_PTR) {
 }
 
 fn c_get_slot_list(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_PTR) {
-    let args: CGetSlotListArgs = from_str(msg.args()).unwrap();
-    let token_present = if args.token_present {
-        CK_TRUE
-    } else {
-        CK_FALSE
-    };
-    let mut backing_slot_list: Vec<CK_SLOT_ID> = Vec::with_capacity(args.slot_count);
-    let slot_list = if args.slot_list.is_none() {
-        std::ptr::null()
-    } else {
-        backing_slot_list.as_mut_ptr()
-    };
-    let mut slot_count = if args.slot_list.is_none() {
-        0
-    } else {
-        args.slot_count as u64
+    let mut args: CGetSlotListArgs = from_str(msg.args()).unwrap();
+    let slot_list = match &mut args.slot_list {
+        &mut Some(ref mut slot_list) => {
+            slot_list.reserve(args.slot_count as usize);
+            slot_list.as_mut_ptr()
+        }
+        &mut None => std::ptr::null(),
     };
     let result = unsafe {
-        (*fs).C_GetSlotList.unwrap()(token_present, slot_list as *mut u64, &mut slot_count)
+        (*fs).C_GetSlotList.unwrap()(
+            args.token_present,
+            slot_list as *mut CK_SLOT_ID,
+            &mut args.slot_count,
+        )
     };
     println!("C_GetSlotList: {}", result);
     let msg_back = if result == CKR_OK {
-        unsafe {
-            backing_slot_list.set_len(slot_count as usize);
+        match &mut args.slot_list {
+            &mut Some(ref mut slot_list) => unsafe { slot_list.set_len(args.slot_count as usize) },
+            &mut None => {}
         }
-        let slot_list_out = if args.slot_list.is_none() {
-            None
-        } else {
-            Some(backing_slot_list)
-        };
-        let response = CGetSlotListArgs {
-            token_present: args.token_present,
-            slot_list: slot_list_out,
-            slot_count: slot_count as usize,
-        };
-        Response::new(CKR_OK, to_string(&response).unwrap())
+        Response::new(CKR_OK, to_string(&args).unwrap())
     } else {
         Response::new(result, String::new())
     };
@@ -220,42 +207,30 @@ fn c_get_token_info(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST
 }
 
 fn c_get_mechanism_list(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_PTR) {
-    let args: CGetMechanismListArgs = from_str(msg.args()).unwrap();
-    let mut backing_mechanism_list: Vec<CK_MECHANISM_TYPE> =
-        Vec::with_capacity(args.mechanism_count);
-    let mechanism_list = if args.mechanism_list.is_none() {
-        std::ptr::null()
-    } else {
-        backing_mechanism_list.as_mut_ptr()
-    };
-    let mut mechanism_count = if args.mechanism_list.is_none() {
-        0
-    } else {
-        args.mechanism_count as u64
+    let mut args: CGetMechanismListArgs = from_str(msg.args()).unwrap();
+    let mechanism_list = match &mut args.mechanism_list {
+        &mut Some(ref mut mechanism_list) => {
+            mechanism_list.reserve(args.mechanism_count as usize);
+            mechanism_list.as_mut_ptr()
+        }
+        &mut None => std::ptr::null(),
     };
     let result = unsafe {
         (*fs).C_GetMechanismList.unwrap()(
             args.slot_id,
-            mechanism_list as *mut u64,
-            &mut mechanism_count,
+            mechanism_list as *mut CK_MECHANISM_TYPE,
+            &mut args.mechanism_count,
         )
     };
     println!("C_GetMechanismList: {}", result);
     let msg_back = if result == CKR_OK {
-        unsafe {
-            backing_mechanism_list.set_len(mechanism_count as usize);
+        match &mut args.mechanism_list {
+            &mut Some(ref mut mechanism_list) => unsafe {
+                mechanism_list.set_len(args.mechanism_count as usize);
+            },
+            &mut None => {}
         }
-        let mechanism_list_out = if args.mechanism_list.is_none() {
-            None
-        } else {
-            Some(backing_mechanism_list)
-        };
-        let response = CGetMechanismListArgs {
-            slot_id: args.slot_id,
-            mechanism_list: mechanism_list_out,
-            mechanism_count: mechanism_count as usize,
-        };
-        Response::new(CKR_OK, to_string(&response).unwrap())
+        Response::new(CKR_OK, to_string(&args).unwrap())
     } else {
         Response::new(result, String::new())
     };

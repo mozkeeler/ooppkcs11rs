@@ -107,10 +107,10 @@ extern "C" fn C_GetSlotList(
     let slot_count = if pSlotList.is_null() {
         0
     } else {
-        unsafe { *pulCount as usize }
+        unsafe { *pulCount }
     };
     let args = CGetSlotListArgs {
-        token_present: tokenPresent != 0,
+        token_present: tokenPresent,
         slot_list,
         slot_count,
     };
@@ -121,14 +121,14 @@ extern "C" fn C_GetSlotList(
     if response.status() == CKR_OK {
         let mut result: CGetSlotListArgs = from_str(response.args()).unwrap();
         unsafe {
-            *pulCount = result.slot_count as u64;
+            *pulCount = result.slot_count;
             if !pSlotList.is_null() {
                 let ids = match result.slot_list.take() {
                     Some(ids) => ids,
                     None => return CKR_GENERAL_ERROR,
                 };
                 for i in 0..result.slot_count {
-                    *pSlotList.offset(i as isize) = ids[i];
+                    *pSlotList.offset(i as isize) = ids[i as usize];
                 }
             }
         }
@@ -192,7 +192,7 @@ extern "C" fn C_GetMechanismList(
     let mechanism_count = if pMechanismList.is_null() {
         0
     } else {
-        unsafe { *pulCount as usize }
+        unsafe { *pulCount }
     };
     let args = CGetMechanismListArgs {
         slot_id: slotID,
@@ -213,7 +213,7 @@ extern "C" fn C_GetMechanismList(
                     None => return CKR_GENERAL_ERROR,
                 };
                 for i in 0..result.mechanism_count {
-                    *pMechanismList.offset(i as isize) = ids[i];
+                    *pMechanismList.offset(i as isize) = ids[i as usize];
                 }
             }
         }
