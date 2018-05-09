@@ -42,17 +42,12 @@ struct Pkcs11Module {
 }
 
 fn main() {
-    println!("ooppkcs11rs main");
     let server_name = read_string_from_stdin().expect("couldn't read server name");
-    println!("server_name: '{}'", server_name);
     let tx: IpcSender<Response> = IpcSender::connect(server_name).unwrap();
     let (server, name): (IpcOneShotServer<Request>, String) = IpcOneShotServer::new().unwrap();
-    println!("sending server name to parent");
     tx.send(Response::new(CKR_OK, name))
         .expect("couldn't send server name to parent");
-    println!("waiting for parent to connect");
     let (rx, msg): (IpcReceiver<Request>, Request) = server.accept().unwrap();
-    println!("{:?}", msg);
     if msg.function() != "C_Initialize" {
         panic!("unexpected first message from parent");
     }
@@ -64,7 +59,7 @@ fn main() {
         let null_args = std::ptr::null::<CK_C_INITIALIZE_ARGS>();
         (*function_list_ptr).C_Initialize.unwrap()(null_args as *mut CK_C_INITIALIZE_ARGS)
     };
-    println!("result from C_Initialize was {}", result);
+    println!("C_Initialize: {}", result);
     tx.send(Response::new(result, String::new())).unwrap();
     if result != CKR_OK {
         return;

@@ -30,7 +30,6 @@ extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
     let (server, name): (IpcOneShotServer<Response>, String) = IpcOneShotServer::new().unwrap();
     {
         let mut stdin = child.stdin.as_mut().expect("failed to open child.stdin");
-        println!("sending server name '{}' to child", name);
         stdin
             .write_all(name.as_bytes())
             .expect("failed to send server name to child");
@@ -40,9 +39,7 @@ extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
             .write_all(&[0])
             .expect("failed to send null terminator to child");
     }
-    println!("wrote server name to child");
     let (rx, msg): (IpcReceiver<Response>, Response) = server.accept().unwrap();
-    println!("child_server_name: '{}'", msg.args());
     let tx: IpcSender<Request> = IpcSender::connect(msg.args().to_owned()).unwrap();
     let args = if !pInitArgs.is_null() {
         unsafe {
