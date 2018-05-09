@@ -94,8 +94,10 @@ fn main() {
             "C_FindObjectsInit" => c_find_objects_init(msg, function_list_ptr),
             "C_FindObjects" => c_find_objects(msg, function_list_ptr),
             "C_FindObjectsFinal" => c_find_objects_final(msg, function_list_ptr),
+            "C_CloseSession" => c_close_session(msg, function_list_ptr),
             "C_CloseAllSessions" => c_close_all_sessions(msg, function_list_ptr),
             "C_GetAttributeValue" => c_get_attribute_value(msg, function_list_ptr),
+            "C_Logout" => c_logout(msg, function_list_ptr),
             _ => Ok(Response::new(CKR_FUNCTION_NOT_SUPPORTED, String::new())),
         };
         match response {
@@ -122,23 +124,40 @@ fn c_finalize(fs: CK_FUNCTION_LIST_PTR) -> Result<Response, serde_json::Error> {
     Ok(Response::new(result, String::new()))
 }
 
-fn c_get_info(fs: CK_FUNCTION_LIST_PTR) -> Result<Response, serde_json::Error> {
-    let mut ck_info = CK_INFO {
-        cryptokiVersion: CK_VERSION { major: 0, minor: 0 },
-        manufacturerID: [0; 32usize],
-        flags: 0,
-        libraryDescription: [0; 32usize],
-        libraryVersion: CK_VERSION { major: 0, minor: 0 },
+macro_rules! fill_struct_pkcs11_function {
+    ($function_name:ident, $out_arg_type:ty, $pkcs11_function:ident) => {
+        fn $function_name(fs: CK_FUNCTION_LIST_PTR) -> Result<Response, serde_json::Error> {
+            let mut out_arg: $out_arg_type = Default::default();
+            let result = unsafe { (*fs).$pkcs11_function.unwrap()(&mut out_arg) };
+            println!("{}: {}", stringify!($pkcs11_function), result);
+            let payload = if result == CKR_OK {
+                to_string(&out_arg)?
+            } else {
+                String::new()
+            };
+            Ok(Response::new(result, payload))
+        }
     };
-    let result = unsafe { (*fs).C_GetInfo.unwrap()(&mut ck_info) };
-    println!("C_GetInfo: {}", result);
-    let msg_back = if result == CKR_OK {
-        Response::new(CKR_OK, to_string(&ck_info)?)
-    } else {
-        Response::new(result, String::new())
+    ($function_name:ident, $in_arg_type:ty, $out_arg_type:ty, $pkcs11_function:ident) => {
+        fn $function_name(
+            msg: Request,
+            fs: CK_FUNCTION_LIST_PTR,
+        ) -> Result<Response, serde_json::Error> {
+            let in_arg: $in_arg_type = from_str(msg.args())?;
+            let mut out_arg: $out_arg_type = Default::default();
+            let result = unsafe { (*fs).$pkcs11_function.unwrap()(in_arg, &mut out_arg) };
+            println!("{}: {}", stringify!($pkcs11_function), result);
+            let payload = if result == CKR_OK {
+                to_string(&out_arg)?
+            } else {
+                String::new()
+            };
+            Ok(Response::new(result, payload))
+        }
     };
-    Ok(msg_back)
 }
+
+fill_struct_pkcs11_function!(c_get_info, CK_INFO, C_GetInfo);
 
 fn c_get_slot_list(msg: Request, fs: CK_FUNCTION_LIST_PTR) -> Result<Response, serde_json::Error> {
     let mut args: CGetSlotListArgs = from_str(msg.args())?;
@@ -169,57 +188,8 @@ fn c_get_slot_list(msg: Request, fs: CK_FUNCTION_LIST_PTR) -> Result<Response, s
     Ok(msg_back)
 }
 
-fn c_get_slot_info(msg: Request, fs: CK_FUNCTION_LIST_PTR) -> Result<Response, serde_json::Error> {
-    let slot_id: CK_SLOT_ID = from_str(msg.args())?;
-    let mut slot_info = CK_SLOT_INFO {
-        slotDescription1: [0; 32usize],
-        slotDescription2: [0; 32usize],
-        manufacturerID: [0; 32usize],
-        flags: 0,
-        hardwareVersion: CK_VERSION { major: 0, minor: 0 },
-        firmwareVersion: CK_VERSION { major: 0, minor: 0 },
-    };
-    let result = unsafe { (*fs).C_GetSlotInfo.unwrap()(slot_id, &mut slot_info) };
-    println!("C_GetSlotInfo: {}", result);
-    let msg_back = if result == CKR_OK {
-        Response::new(CKR_OK, to_string(&slot_info)?)
-    } else {
-        Response::new(result, String::new())
-    };
-    Ok(msg_back)
-}
-
-fn c_get_token_info(msg: Request, fs: CK_FUNCTION_LIST_PTR) -> Result<Response, serde_json::Error> {
-    let slot_id: CK_SLOT_ID = from_str(msg.args())?;
-    let mut token_info = CK_TOKEN_INFO {
-        label: [0; 32usize],
-        manufacturerID: [0; 32usize],
-        model: [0; 16usize],
-        serialNumber: [0; 16usize],
-        flags: 0,
-        ulMaxSessionCount: 0,
-        ulSessionCount: 0,
-        ulMaxRwSessionCount: 0,
-        ulRwSessionCount: 0,
-        ulMaxPinLen: 0,
-        ulMinPinLen: 0,
-        ulTotalPublicMemory: 0,
-        ulFreePublicMemory: 0,
-        ulTotalPrivateMemory: 0,
-        ulFreePrivateMemory: 0,
-        hardwareVersion: CK_VERSION { major: 0, minor: 0 },
-        firmwareVersion: CK_VERSION { major: 0, minor: 0 },
-        utcTime: [0; 16usize],
-    };
-    let result = unsafe { (*fs).C_GetTokenInfo.unwrap()(slot_id, &mut token_info) };
-    println!("C_GetTokenInfo: {}", result);
-    let msg_back = if result == CKR_OK {
-        Response::new(CKR_OK, to_string(&token_info)?)
-    } else {
-        Response::new(result, String::new())
-    };
-    Ok(msg_back)
-}
+fill_struct_pkcs11_function!(c_get_slot_info, CK_SLOT_ID, CK_SLOT_INFO, C_GetSlotInfo);
+fill_struct_pkcs11_function!(c_get_token_info, CK_SLOT_ID, CK_TOKEN_INFO, C_GetTokenInfo);
 
 fn c_get_mechanism_list(
     msg: Request,
@@ -328,13 +298,16 @@ macro_rules! simple_pkcs11_function {
         ) -> Result<Response, serde_json::Error> {
             let arg: $arg_type = from_str(msg.args())?;
             let result = unsafe { (*fs).$pkcs11_function.unwrap()(arg) };
+            println!("{}: {}", stringify!($pkcs11_function), result);
             Ok(Response::new(result, String::new()))
         }
     };
 }
 
 simple_pkcs11_function!(c_find_objects_final, CK_SESSION_HANDLE, C_FindObjectsFinal);
+simple_pkcs11_function!(c_close_session, CK_SESSION_HANDLE, C_CloseSession);
 simple_pkcs11_function!(c_close_all_sessions, CK_SLOT_ID, C_CloseAllSessions);
+simple_pkcs11_function!(c_logout, CK_SESSION_HANDLE, C_Logout);
 
 fn c_get_attribute_value(
     msg: Request,

@@ -17,18 +17,14 @@ pub const CK_TRUE: CK_BYTE = 1;
 pub const CK_FALSE: CK_BYTE = 0;
 
 #[repr(C)]
-#[derive(Debug, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub struct CK_VERSION {
     pub major: CK_BYTE,
     pub minor: CK_BYTE,
 }
-impl Clone for CK_VERSION {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
+
 #[repr(C)]
-#[derive(Debug, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub struct CK_INFO {
     pub cryptokiVersion: CK_VERSION,
     pub manufacturerID: [CK_UTF8CHAR; 32usize],
@@ -37,17 +33,13 @@ pub struct CK_INFO {
     pub libraryVersion: CK_VERSION,
 }
 
-impl Clone for CK_INFO {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
 pub type CK_INFO_PTR = *mut CK_INFO;
 pub type CK_NOTIFICATION = CK_ULONG;
 pub type CK_SLOT_ID = CK_ULONG;
 pub type CK_SLOT_ID_PTR = *mut CK_SLOT_ID;
+
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub struct CK_SLOT_INFO {
     // We're cheating here because derive only goes up to 32 for some reason.
     pub slotDescription1: [CK_UTF8CHAR; 32usize],
@@ -57,9 +49,10 @@ pub struct CK_SLOT_INFO {
     pub hardwareVersion: CK_VERSION,
     pub firmwareVersion: CK_VERSION,
 }
+
 pub type CK_SLOT_INFO_PTR = *mut CK_SLOT_INFO;
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub struct CK_TOKEN_INFO {
     pub label: [CK_UTF8CHAR; 32usize],
     pub manufacturerID: [CK_UTF8CHAR; 32usize],

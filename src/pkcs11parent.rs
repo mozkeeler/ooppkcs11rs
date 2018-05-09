@@ -76,27 +76,53 @@ extern "C" fn C_Finalize(pReserved: CK_VOID_PTR) -> CK_RV {
     response.status()
 }
 
-extern "C" fn C_GetInfo(pInfo: CK_INFO_PTR) -> CK_RV {
-    println!("parent: C_GetInfo");
-    let mut tx_guard = TX.lock().unwrap();
-    let mut rx_guard = RX.lock().unwrap();
-    tx_guard
-        .as_mut()
-        .unwrap()
-        .send(Request::new("C_GetInfo", String::new()))
-        .unwrap();
-    let response = rx_guard.as_mut().unwrap().recv().unwrap();
-    println!("parent received {:?}", response);
-    if response.status() == CKR_OK {
-        let ck_info = from_str(response.args()).unwrap();
-        unsafe {
-            *pInfo = ck_info;
+macro_rules! fill_struct_pkcs11_function {
+    ($pkcs11_function:ident, $out_arg_type:ty) => {
+        extern "C" fn $pkcs11_function(out_arg: $out_arg_type) -> CK_RV {
+            println!("parent: {}", stringify!($pkcs11_function));
+            let mut tx_guard = TX.lock().unwrap();
+            let mut rx_guard = RX.lock().unwrap();
+            tx_guard
+                .as_mut()
+                .unwrap()
+                .send(Request::new(stringify!($pkcs11_function), String::new()))
+                .unwrap();
+            let response = rx_guard.as_mut().unwrap().recv().unwrap();
+            println!("parent received {:?}", response);
+            if response.status() == CKR_OK {
+                let arg = from_str(response.args()).unwrap();
+                unsafe {
+                    *out_arg = arg;
+                }
+                CKR_OK
+            } else {
+                response.status()
+            }
         }
-        CKR_OK
-    } else {
-        response.status()
-    }
+    };
+    ($pkcs11_function:ident, $in_arg_type:ty, $out_arg_type:ty) => {
+        extern "C" fn $pkcs11_function(in_arg: $in_arg_type, out_arg: $out_arg_type) -> CK_RV {
+            println!("parent: {}", stringify!($pkcs11_function));
+            let mut tx_guard = TX.lock().unwrap();
+            let mut rx_guard = RX.lock().unwrap();
+            let msg = Request::new(stringify!($pkcs11_function), to_string(&in_arg).unwrap());
+            tx_guard.as_mut().unwrap().send(msg).unwrap();
+            let response = rx_guard.as_mut().unwrap().recv().unwrap();
+            println!("parent received {:?}", response);
+            if response.status() == CKR_OK {
+                let arg = from_str(response.args()).unwrap();
+                unsafe {
+                    *out_arg = arg;
+                }
+                CKR_OK
+            } else {
+                response.status()
+            }
+        }
+    };
 }
+
+fill_struct_pkcs11_function!(C_GetInfo, CK_INFO_PTR);
 
 extern "C" fn C_GetSlotList(
     tokenPresent: CK_BBOOL,
@@ -148,43 +174,8 @@ extern "C" fn C_GetSlotList(
     }
 }
 
-extern "C" fn C_GetSlotInfo(slotID: CK_SLOT_ID, pInfo: CK_SLOT_INFO_PTR) -> CK_RV {
-    println!("parent: C_GetSlotInfo");
-    let mut tx_guard = TX.lock().unwrap();
-    let mut rx_guard = RX.lock().unwrap();
-    let msg = Request::new("C_GetSlotInfo", to_string(&slotID).unwrap());
-    tx_guard.as_mut().unwrap().send(msg).unwrap();
-    let response = rx_guard.as_mut().unwrap().recv().unwrap();
-    println!("parent received {:?}", response);
-    if response.status() == CKR_OK {
-        let slot_info = from_str(response.args()).unwrap();
-        unsafe {
-            *pInfo = slot_info;
-        }
-        CKR_OK
-    } else {
-        response.status()
-    }
-}
-
-extern "C" fn C_GetTokenInfo(slotID: CK_SLOT_ID, pInfo: CK_TOKEN_INFO_PTR) -> CK_RV {
-    println!("parent: C_GetTokenInfo");
-    let mut tx_guard = TX.lock().unwrap();
-    let mut rx_guard = RX.lock().unwrap();
-    let msg = Request::new("C_GetTokenInfo", to_string(&slotID).unwrap());
-    tx_guard.as_mut().unwrap().send(msg).unwrap();
-    let response = rx_guard.as_mut().unwrap().recv().unwrap();
-    println!("parent received {:?}", response);
-    if response.status() == CKR_OK {
-        let token_info = from_str(response.args()).unwrap();
-        unsafe {
-            *pInfo = token_info;
-        }
-        CKR_OK
-    } else {
-        response.status()
-    }
-}
+fill_struct_pkcs11_function!(C_GetSlotInfo, CK_SLOT_ID, CK_SLOT_INFO_PTR);
+fill_struct_pkcs11_function!(C_GetTokenInfo, CK_SLOT_ID, CK_TOKEN_INFO_PTR);
 
 extern "C" fn C_GetMechanismList(
     slotID: CK_SLOT_ID,
@@ -299,21 +290,23 @@ extern "C" fn C_OpenSession(
     }
 }
 
-extern "C" fn C_CloseSession(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    println!("C_CloseSession");
-    CKR_FUNCTION_NOT_SUPPORTED
+macro_rules! simple_pkcs11_function {
+    ($pkcs11_function:ident, $arg_type:ty) => {
+        extern "C" fn $pkcs11_function(arg: $arg_type) -> CK_RV {
+            println!("parent: {}", stringify!($pkcs11_function));
+            let mut tx_guard = TX.lock().unwrap();
+            let mut rx_guard = RX.lock().unwrap();
+            let msg = Request::new(stringify!($pkcs11_function), to_string(&arg).unwrap());
+            tx_guard.as_mut().unwrap().send(msg).unwrap();
+            let response = rx_guard.as_mut().unwrap().recv().unwrap();
+            println!("parent received {:?}", response);
+            response.status()
+        }
+    };
 }
 
-extern "C" fn C_CloseAllSessions(slotID: CK_SLOT_ID) -> CK_RV {
-    println!("parent: C_CloseAllSessions");
-    let mut tx_guard = TX.lock().unwrap();
-    let mut rx_guard = RX.lock().unwrap();
-    let msg = Request::new("C_CloseAllSessions", to_string(&slotID).unwrap());
-    tx_guard.as_mut().unwrap().send(msg).unwrap();
-    let response = rx_guard.as_mut().unwrap().recv().unwrap();
-    println!("parent received {:?}", response);
-    response.status()
-}
+simple_pkcs11_function!(C_CloseSession, CK_SESSION_HANDLE);
+simple_pkcs11_function!(C_CloseAllSessions, CK_SLOT_ID);
 
 extern "C" fn C_GetSessionInfo(hSession: CK_SESSION_HANDLE, pInfo: CK_SESSION_INFO_PTR) -> CK_RV {
     println!("C_GetSessionInfo");
@@ -346,10 +339,9 @@ extern "C" fn C_Login(
     println!("C_Login");
     CKR_FUNCTION_NOT_SUPPORTED
 }
-extern "C" fn C_Logout(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    println!("C_Logout");
-    CKR_FUNCTION_NOT_SUPPORTED
-}
+
+simple_pkcs11_function!(C_Logout, CK_SESSION_HANDLE);
+
 extern "C" fn C_CreateObject(
     hSession: CK_SESSION_HANDLE,
     pTemplate: CK_ATTRIBUTE_PTR,
@@ -482,16 +474,7 @@ extern "C" fn C_FindObjects(
     response.status()
 }
 
-extern "C" fn C_FindObjectsFinal(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    println!("parent: C_FindObjectsFinal");
-    let mut tx_guard = TX.lock().unwrap();
-    let mut rx_guard = RX.lock().unwrap();
-    let msg = Request::new("C_FindObjectsFinal", to_string(&hSession).unwrap());
-    tx_guard.as_mut().unwrap().send(msg).unwrap();
-    let response = rx_guard.as_mut().unwrap().recv().unwrap();
-    println!("parent received {:?}", response);
-    response.status()
-}
+simple_pkcs11_function!(C_FindObjectsFinal, CK_SESSION_HANDLE);
 
 extern "C" fn C_EncryptInit(
     hSession: CK_SESSION_HANDLE,
