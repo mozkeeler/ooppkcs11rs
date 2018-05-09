@@ -91,6 +91,7 @@ fn main() {
             "C_GetTokenInfo" => c_get_token_info(msg, function_list_ptr),
             "C_GetMechanismList" => c_get_mechanism_list(msg, function_list_ptr),
             "C_OpenSession" => c_open_session(msg, function_list_ptr),
+            "C_GetSessionInfo" => c_get_session_info(msg, function_list_ptr),
             "C_FindObjectsInit" => c_find_objects_init(msg, function_list_ptr),
             "C_FindObjects" => c_find_objects(msg, function_list_ptr),
             "C_FindObjectsFinal" => c_find_objects_final(msg, function_list_ptr),
@@ -244,6 +245,13 @@ fn c_open_session(msg: Request, fs: CK_FUNCTION_LIST_PTR) -> Result<Response, se
     };
     Ok(msg_back)
 }
+
+fill_struct_pkcs11_function!(
+    c_get_session_info,
+    CK_SESSION_HANDLE,
+    CK_SESSION_INFO,
+    C_GetSessionInfo
+);
 
 fn c_find_objects_init(
     msg: Request,

@@ -17,14 +17,14 @@ pub const CK_TRUE: CK_BYTE = 1;
 pub const CK_FALSE: CK_BYTE = 0;
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
 pub struct CK_VERSION {
     pub major: CK_BYTE,
     pub minor: CK_BYTE,
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
 pub struct CK_INFO {
     pub cryptokiVersion: CK_VERSION,
     pub manufacturerID: [CK_UTF8CHAR; 32usize],
@@ -39,7 +39,7 @@ pub type CK_SLOT_ID = CK_ULONG;
 pub type CK_SLOT_ID_PTR = *mut CK_SLOT_ID;
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
 pub struct CK_SLOT_INFO {
     // We're cheating here because derive only goes up to 32 for some reason.
     pub slotDescription1: [CK_UTF8CHAR; 32usize],
@@ -52,7 +52,7 @@ pub struct CK_SLOT_INFO {
 
 pub type CK_SLOT_INFO_PTR = *mut CK_SLOT_INFO;
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
 pub struct CK_TOKEN_INFO {
     pub label: [CK_UTF8CHAR; 32usize],
     pub manufacturerID: [CK_UTF8CHAR; 32usize],
@@ -78,19 +78,16 @@ pub type CK_SESSION_HANDLE = CK_ULONG;
 pub type CK_SESSION_HANDLE_PTR = *mut CK_SESSION_HANDLE;
 pub type CK_USER_TYPE = CK_ULONG;
 pub type CK_STATE = CK_ULONG;
+
 #[repr(C)]
-#[derive(Debug, Copy)]
+#[derive(Copy, Clone, Debug, Default, Deserialize, Serialize)]
 pub struct CK_SESSION_INFO {
     pub slotID: CK_SLOT_ID,
     pub state: CK_STATE,
     pub flags: CK_FLAGS,
     pub ulDeviceError: CK_ULONG,
 }
-impl Clone for CK_SESSION_INFO {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
+
 pub type CK_SESSION_INFO_PTR = *mut CK_SESSION_INFO;
 pub type CK_OBJECT_HANDLE = CK_ULONG;
 pub type CK_OBJECT_HANDLE_PTR = *mut CK_OBJECT_HANDLE;

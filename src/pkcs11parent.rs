@@ -308,10 +308,8 @@ macro_rules! simple_pkcs11_function {
 simple_pkcs11_function!(C_CloseSession, CK_SESSION_HANDLE);
 simple_pkcs11_function!(C_CloseAllSessions, CK_SLOT_ID);
 
-extern "C" fn C_GetSessionInfo(hSession: CK_SESSION_HANDLE, pInfo: CK_SESSION_INFO_PTR) -> CK_RV {
-    println!("C_GetSessionInfo");
-    CKR_FUNCTION_NOT_SUPPORTED
-}
+fill_struct_pkcs11_function!(C_GetSessionInfo, CK_SESSION_HANDLE, CK_SESSION_INFO_PTR);
+
 extern "C" fn C_GetOperationState(
     hSession: CK_SESSION_HANDLE,
     pOperationState: CK_BYTE_PTR,
