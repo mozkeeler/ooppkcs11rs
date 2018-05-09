@@ -70,7 +70,8 @@ fn main() {
         return;
     }
 
-    loop {
+    let mut keep_going = true;
+    while keep_going {
         let msg = match rx.recv() {
             Ok(msg) => msg,
             Err(e) => {
@@ -79,38 +80,49 @@ fn main() {
             }
         };
         println!("child received {:?}", msg);
-        match msg.function() {
+        let response = match msg.function() {
             "C_Finalize" => {
-                c_finalize(&tx, function_list_ptr);
-                break;
+                keep_going = false;
+                c_finalize(function_list_ptr)
             }
-            "C_GetInfo" => c_get_info(&tx, function_list_ptr),
-            "C_GetSlotList" => c_get_slot_list(&tx, msg, function_list_ptr),
-            "C_GetSlotInfo" => c_get_slot_info(&tx, msg, function_list_ptr),
-            "C_GetTokenInfo" => c_get_token_info(&tx, msg, function_list_ptr),
-            "C_GetMechanismList" => c_get_mechanism_list(&tx, msg, function_list_ptr),
-            "C_OpenSession" => c_open_session(&tx, msg, function_list_ptr),
-            "C_FindObjectsInit" => c_find_objects_init(&tx, msg, function_list_ptr),
-            "C_FindObjects" => c_find_objects(&tx, msg, function_list_ptr),
-            "C_FindObjectsFinal" => c_find_objects_final(&tx, msg, function_list_ptr),
-            "C_CloseAllSessions" => c_close_all_sessions(&tx, msg, function_list_ptr),
-            "C_GetAttributeValue" => c_get_attribute_value(&tx, msg, function_list_ptr),
-            _ => {
-                let msg_back = Response::new(CKR_FUNCTION_NOT_SUPPORTED, String::new());
-                tx.send(msg_back).unwrap();
+            "C_GetInfo" => c_get_info(function_list_ptr),
+            "C_GetSlotList" => c_get_slot_list(msg, function_list_ptr),
+            "C_GetSlotInfo" => c_get_slot_info(msg, function_list_ptr),
+            "C_GetTokenInfo" => c_get_token_info(msg, function_list_ptr),
+            "C_GetMechanismList" => c_get_mechanism_list(msg, function_list_ptr),
+            "C_OpenSession" => c_open_session(msg, function_list_ptr),
+            "C_FindObjectsInit" => c_find_objects_init(msg, function_list_ptr),
+            "C_FindObjects" => c_find_objects(msg, function_list_ptr),
+            "C_FindObjectsFinal" => c_find_objects_final(msg, function_list_ptr),
+            "C_CloseAllSessions" => c_close_all_sessions(msg, function_list_ptr),
+            "C_GetAttributeValue" => c_get_attribute_value(msg, function_list_ptr),
+            _ => Ok(Response::new(CKR_FUNCTION_NOT_SUPPORTED, String::new())),
+        };
+        match response {
+            Ok(response) => match tx.send(response) {
+                Ok(()) => {}
+                Err(e) => {
+                    println!("error sending response to parent: '{}'", e);
+                    keep_going = false;
+                }
+            },
+            Err(e) => {
+                println!("error performing operation: '{}'", e);
+                keep_going = false;
             }
         }
     }
 }
 
-fn c_finalize(tx: &IpcSender<Response>, fs: CK_FUNCTION_LIST_PTR) {
+fn c_finalize(fs: CK_FUNCTION_LIST_PTR) -> Result<Response, serde_json::Error> {
     let result = unsafe {
         (*fs).C_Finalize.unwrap()(std::ptr::null::<std::os::raw::c_void>() as CK_VOID_PTR)
     };
-    tx.send(Response::new(result, String::new())).unwrap();
+    println!("C_Finalize: {}", result);
+    Ok(Response::new(result, String::new()))
 }
 
-fn c_get_info(tx: &IpcSender<Response>, fs: CK_FUNCTION_LIST_PTR) {
+fn c_get_info(fs: CK_FUNCTION_LIST_PTR) -> Result<Response, serde_json::Error> {
     let mut ck_info = CK_INFO {
         cryptokiVersion: CK_VERSION { major: 0, minor: 0 },
         manufacturerID: [0; 32usize],
@@ -121,15 +133,15 @@ fn c_get_info(tx: &IpcSender<Response>, fs: CK_FUNCTION_LIST_PTR) {
     let result = unsafe { (*fs).C_GetInfo.unwrap()(&mut ck_info) };
     println!("C_GetInfo: {}", result);
     let msg_back = if result == CKR_OK {
-        Response::new(CKR_OK, to_string(&ck_info).unwrap())
+        Response::new(CKR_OK, to_string(&ck_info)?)
     } else {
         Response::new(result, String::new())
     };
-    tx.send(msg_back).unwrap();
+    Ok(msg_back)
 }
 
-fn c_get_slot_list(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_PTR) {
-    let mut args: CGetSlotListArgs = from_str(msg.args()).unwrap();
+fn c_get_slot_list(msg: Request, fs: CK_FUNCTION_LIST_PTR) -> Result<Response, serde_json::Error> {
+    let mut args: CGetSlotListArgs = from_str(msg.args())?;
     let slot_list = match &mut args.slot_list {
         &mut Some(ref mut slot_list) => {
             slot_list.reserve(args.slot_count as usize);
@@ -150,15 +162,15 @@ fn c_get_slot_list(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_
             &mut Some(ref mut slot_list) => unsafe { slot_list.set_len(args.slot_count as usize) },
             &mut None => {}
         }
-        Response::new(CKR_OK, to_string(&args).unwrap())
+        Response::new(CKR_OK, to_string(&args)?)
     } else {
         Response::new(result, String::new())
     };
-    tx.send(msg_back).unwrap();
+    Ok(msg_back)
 }
 
-fn c_get_slot_info(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_PTR) {
-    let slot_id: CK_SLOT_ID = from_str(msg.args()).unwrap();
+fn c_get_slot_info(msg: Request, fs: CK_FUNCTION_LIST_PTR) -> Result<Response, serde_json::Error> {
+    let slot_id: CK_SLOT_ID = from_str(msg.args())?;
     let mut slot_info = CK_SLOT_INFO {
         slotDescription1: [0; 32usize],
         slotDescription2: [0; 32usize],
@@ -170,15 +182,15 @@ fn c_get_slot_info(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_
     let result = unsafe { (*fs).C_GetSlotInfo.unwrap()(slot_id, &mut slot_info) };
     println!("C_GetSlotInfo: {}", result);
     let msg_back = if result == CKR_OK {
-        Response::new(CKR_OK, to_string(&slot_info).unwrap())
+        Response::new(CKR_OK, to_string(&slot_info)?)
     } else {
         Response::new(result, String::new())
     };
-    tx.send(msg_back).unwrap();
+    Ok(msg_back)
 }
 
-fn c_get_token_info(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_PTR) {
-    let slot_id: CK_SLOT_ID = from_str(msg.args()).unwrap();
+fn c_get_token_info(msg: Request, fs: CK_FUNCTION_LIST_PTR) -> Result<Response, serde_json::Error> {
+    let slot_id: CK_SLOT_ID = from_str(msg.args())?;
     let mut token_info = CK_TOKEN_INFO {
         label: [0; 32usize],
         manufacturerID: [0; 32usize],
@@ -202,15 +214,18 @@ fn c_get_token_info(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST
     let result = unsafe { (*fs).C_GetTokenInfo.unwrap()(slot_id, &mut token_info) };
     println!("C_GetTokenInfo: {}", result);
     let msg_back = if result == CKR_OK {
-        Response::new(CKR_OK, to_string(&token_info).unwrap())
+        Response::new(CKR_OK, to_string(&token_info)?)
     } else {
         Response::new(result, String::new())
     };
-    tx.send(msg_back).unwrap();
+    Ok(msg_back)
 }
 
-fn c_get_mechanism_list(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_PTR) {
-    let mut args: CGetMechanismListArgs = from_str(msg.args()).unwrap();
+fn c_get_mechanism_list(
+    msg: Request,
+    fs: CK_FUNCTION_LIST_PTR,
+) -> Result<Response, serde_json::Error> {
+    let mut args: CGetMechanismListArgs = from_str(msg.args())?;
     let mechanism_list = match &mut args.mechanism_list {
         &mut Some(ref mut mechanism_list) => {
             mechanism_list.reserve(args.mechanism_count as usize);
@@ -233,15 +248,15 @@ fn c_get_mechanism_list(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_
             },
             &mut None => {}
         }
-        Response::new(CKR_OK, to_string(&args).unwrap())
+        Response::new(CKR_OK, to_string(&args)?)
     } else {
         Response::new(result, String::new())
     };
-    tx.send(msg_back).unwrap();
+    Ok(msg_back)
 }
 
-fn c_open_session(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_PTR) {
-    let mut args: COpenSessionArgs = from_str(msg.args()).unwrap();
+fn c_open_session(msg: Request, fs: CK_FUNCTION_LIST_PTR) -> Result<Response, serde_json::Error> {
+    let mut args: COpenSessionArgs = from_str(msg.args())?;
     let result = unsafe {
         (*fs).C_OpenSession.unwrap()(
             args.slot_id,
@@ -253,15 +268,18 @@ fn c_open_session(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_P
     };
     println!("C_OpenSession: {}", result);
     let msg_back = if result == CKR_OK {
-        Response::new(CKR_OK, to_string(&args).unwrap())
+        Response::new(CKR_OK, to_string(&args)?)
     } else {
         Response::new(result, String::new())
     };
-    tx.send(msg_back).unwrap();
+    Ok(msg_back)
 }
 
-fn c_find_objects_init(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_PTR) {
-    let args: CFindObjectsInitArgs = from_str(msg.args()).unwrap();
+fn c_find_objects_init(
+    msg: Request,
+    fs: CK_FUNCTION_LIST_PTR,
+) -> Result<Response, serde_json::Error> {
+    let args: CFindObjectsInitArgs = from_str(msg.args())?;
     // NB: currently args must outlive template here (things in template point to data in args).
     let mut template = Vec::with_capacity(args.template.len());
     for t in args.template {
@@ -276,11 +294,11 @@ fn c_find_objects_init(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_L
             template.len() as CK_ULONG,
         )
     };
-    tx.send(Response::new(result, String::new())).unwrap();
+    Ok(Response::new(result, String::new()))
 }
 
-fn c_find_objects(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_PTR) {
-    let mut args: CFindObjectsArgs = from_str(msg.args()).unwrap();
+fn c_find_objects(msg: Request, fs: CK_FUNCTION_LIST_PTR) -> Result<Response, serde_json::Error> {
+    let mut args: CFindObjectsArgs = from_str(msg.args())?;
     args.objects.reserve(args.max_objects as usize);
     let mut object_count = 0;
     let result = unsafe {
@@ -291,31 +309,38 @@ fn c_find_objects(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_P
             &mut object_count,
         )
     };
-    if result == CKR_OK {
+    let msg_back = if result == CKR_OK {
         unsafe {
             args.objects.set_len(object_count as usize);
         }
-        tx.send(Response::new(CKR_OK, to_string(&args).unwrap()))
-            .unwrap();
+        Response::new(CKR_OK, to_string(&args)?)
     } else {
-        tx.send(Response::new(result, String::new())).unwrap();
-    }
+        Response::new(result, String::new())
+    };
+    Ok(msg_back)
 }
 
-fn c_find_objects_final(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_PTR) {
-    let session_handle: CK_SESSION_HANDLE = from_str(msg.args()).unwrap();
-    let result = unsafe { (*fs).C_FindObjectsFinal.unwrap()(session_handle) };
-    tx.send(Response::new(result, String::new())).unwrap();
+macro_rules! simple_pkcs11_function {
+    ($function_name:ident, $arg_type:ty, $pkcs11_function:ident) => {
+        fn $function_name(
+            msg: Request,
+            fs: CK_FUNCTION_LIST_PTR,
+        ) -> Result<Response, serde_json::Error> {
+            let arg: $arg_type = from_str(msg.args())?;
+            let result = unsafe { (*fs).$pkcs11_function.unwrap()(arg) };
+            Ok(Response::new(result, String::new()))
+        }
+    };
 }
 
-fn c_close_all_sessions(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_PTR) {
-    let slot_id: CK_SLOT_ID = from_str(msg.args()).unwrap();
-    let result = unsafe { (*fs).C_CloseAllSessions.unwrap()(slot_id) };
-    tx.send(Response::new(result, String::new())).unwrap();
-}
+simple_pkcs11_function!(c_find_objects_final, CK_SESSION_HANDLE, C_FindObjectsFinal);
+simple_pkcs11_function!(c_close_all_sessions, CK_SLOT_ID, C_CloseAllSessions);
 
-fn c_get_attribute_value(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION_LIST_PTR) {
-    let mut args: CGetAttributeValueArgs = from_str(msg.args()).unwrap();
+fn c_get_attribute_value(
+    msg: Request,
+    fs: CK_FUNCTION_LIST_PTR,
+) -> Result<Response, serde_json::Error> {
+    let mut args: CGetAttributeValueArgs = from_str(msg.args())?;
     // NB: currently args must outlive template here (things in template point to data in args).
     let mut template = Vec::with_capacity(args.template.len());
     for t in args.template {
@@ -329,14 +354,14 @@ fn c_get_attribute_value(tx: &IpcSender<Response>, msg: Request, fs: CK_FUNCTION
             template.len() as CK_ULONG,
         )
     };
-    if result == CKR_OK {
+    let msg_back = if result == CKR_OK {
         args.template = Vec::new();
         for attribute in template {
             args.template.push(Attribute::from_raw(attribute));
         }
-        tx.send(Response::new(CKR_OK, to_string(&args).unwrap()))
-            .unwrap();
+        Response::new(CKR_OK, to_string(&args)?)
     } else {
-        tx.send(Response::new(result, String::new())).unwrap();
-    }
+        Response::new(result, String::new())
+    };
+    Ok(msg_back)
 }
