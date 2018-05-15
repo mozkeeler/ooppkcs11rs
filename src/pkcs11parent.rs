@@ -325,15 +325,59 @@ extern "C" fn C_SetOperationState(
     println!("C_SetOperationState");
     CKR_FUNCTION_NOT_SUPPORTED
 }
-extern "C" fn C_Login(
-    hSession: CK_SESSION_HANDLE,
-    userType: CK_USER_TYPE,
-    pPin: CK_UTF8CHAR_PTR,
-    ulPinLen: CK_ULONG,
-) -> CK_RV {
-    println!("C_Login");
-    CKR_FUNCTION_NOT_SUPPORTED
+
+macro_rules! simple_pkcs11_vector_function {
+    ($pkcs11_function:ident, $arg_type:ty, $type_in_vector:ty) => {
+        extern "C" fn $pkcs11_function(
+            arg: $arg_type,
+            data: *mut $type_in_vector,
+            len: CK_ULONG,
+        ) -> CK_RV {
+            println!("parent: {}", stringify!($pkcs11_function));
+            let mut tx_guard = TX.lock().unwrap();
+            let mut rx_guard = RX.lock().unwrap();
+            let mut vector = Vec::with_capacity(len as usize);
+            unsafe {
+                for i in 0..len {
+                    vector.push(*data.offset(i as isize));
+                }
+            }
+            let args = (arg, vector);
+            let msg = Request::new(stringify!($pkcs11_function), to_string(&args).unwrap());
+            tx_guard.as_mut().unwrap().send(msg).unwrap();
+            let response = rx_guard.as_mut().unwrap().recv().unwrap();
+            println!("parent received {:?}", response);
+            response.status()
+        }
+    };
+    ($pkcs11_function:ident, $arg_type_1:ty, $arg_type_2:ty, $type_in_vector:ty) => {
+        extern "C" fn $pkcs11_function(
+            arg1: $arg_type_1,
+            arg2: $arg_type_2,
+            data: *mut $type_in_vector,
+            len: CK_ULONG,
+        ) -> CK_RV {
+            println!("parent: {}", stringify!($pkcs11_function));
+            let mut tx_guard = TX.lock().unwrap();
+            let mut rx_guard = RX.lock().unwrap();
+            let mut vector = Vec::with_capacity(len as usize);
+            unsafe {
+                for i in 0..len {
+                    vector.push(*data.offset(i as isize));
+                }
+            }
+            let args = (arg1, arg2, vector);
+            let msg = Request::new(stringify!($pkcs11_function), to_string(&args).unwrap());
+            tx_guard.as_mut().unwrap().send(msg).unwrap();
+            let response = rx_guard.as_mut().unwrap().recv().unwrap();
+            println!("parent received {:?}", response);
+            response.status()
+        }
+    };
 }
+
+simple_pkcs11_vector_function!(C_Login, CK_SESSION_HANDLE, CK_USER_TYPE, CK_UTF8CHAR);
+simple_pkcs11_vector_function!(C_SeedRandom, CK_SESSION_HANDLE, CK_BYTE);
 
 simple_pkcs11_function!(C_Logout, CK_SESSION_HANDLE);
 
@@ -778,31 +822,6 @@ extern "C" fn C_DeriveKey(
 ) -> CK_RV {
     println!("C_DeriveKey");
     CKR_FUNCTION_NOT_SUPPORTED
-}
-
-extern "C" fn C_SeedRandom(
-    hSession: CK_SESSION_HANDLE,
-    pSeed: CK_BYTE_PTR,
-    ulSeedLen: CK_ULONG,
-) -> CK_RV {
-    println!("parent: C_SeedRandom");
-    let mut tx_guard = TX.lock().unwrap();
-    let mut rx_guard = RX.lock().unwrap();
-    let mut args = CSeedRandomArgs {
-        session_handle: hSession,
-        seed: Vec::with_capacity(ulSeedLen as usize),
-        length: ulSeedLen,
-    };
-    unsafe {
-        for i in 0..ulSeedLen {
-            args.seed.push(*pSeed.offset(i as isize));
-        }
-    }
-    let msg = Request::new("C_SeedRandom", to_string(&args).unwrap());
-    tx_guard.as_mut().unwrap().send(msg).unwrap();
-    let response = rx_guard.as_mut().unwrap().recv().unwrap();
-    println!("parent received {:?}", response);
-    response.status()
 }
 
 extern "C" fn C_GenerateRandom(

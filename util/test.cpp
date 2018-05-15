@@ -70,12 +70,20 @@ int main(int argc, char* argv[])
   }
   for (int i = 0; i < module->slotCount; i++) {
     PK11SlotInfo* slot = module->slots[i];
-    if (PK11_NeedUserInit(slot)) {
-      if (PK11_InitPin(slot, "", "password") != SECSuccess) {
-        std::cout << "(test) PK11_InitPin failed: ";
+    if (PK11_CheckUserPassword(slot, "123456") != SECSuccess) {
+        std::cout << "(test) PK11_CheckUserPassword failed: ";
         std::cout << PR_ErrorToString(PR_GetError(), 0) << std::endl;
-      }
     }
+    /*
+    if (PK11_ChangePW(slot, "123456", "password") != SECSuccess) {
+        std::cout << "(test) PK11_ChangePW failed: ";
+        std::cout << PR_ErrorToString(PR_GetError(), 0) << std::endl;
+    }
+    if (PK11_CheckUserPassword(slot, "password") != SECSuccess) {
+        std::cout << "(test) PK11_CheckUserPassword failed: ";
+        std::cout << PR_ErrorToString(PR_GetError(), 0) << std::endl;
+    }
+    */
   }
 
   SECMOD_DestroyModule(module);

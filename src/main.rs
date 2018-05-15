@@ -93,6 +93,7 @@ fn main() {
             "C_CloseSession" => c_close_session(msg, function_list_ptr),
             "C_CloseAllSessions" => c_close_all_sessions(msg, function_list_ptr),
             "C_GetAttributeValue" => c_get_attribute_value(msg, function_list_ptr),
+            "C_Login" => c_login(msg, function_list_ptr),
             "C_Logout" => c_logout(msg, function_list_ptr),
             "C_SeedRandom" => c_seed_random(msg, function_list_ptr),
             "C_GenerateRandom" => c_generate_random(msg, function_list_ptr),
@@ -344,13 +345,53 @@ fn c_get_attribute_value(
     Ok(msg_back)
 }
 
-fn c_seed_random(msg: Request, fs: CK_FUNCTION_LIST_PTR) -> Result<Response, serde_json::Error> {
-    let mut args: CSeedRandomArgs = from_str(msg.args())?;
-    let result = unsafe {
-        (*fs).C_SeedRandom.unwrap()(args.session_handle, args.seed.as_mut_ptr(), args.length)
+macro_rules! simple_pkcs11_vector_function {
+    ($function_name:ident, $arg_type:ty, $vector_type:ty, $pkcs11_function:ident) => {
+        fn $function_name(
+            msg: Request,
+            fs: CK_FUNCTION_LIST_PTR,
+        ) -> Result<Response, serde_json::Error> {
+            let (arg, mut vector): ($arg_type, $vector_type) = from_str(msg.args())?;
+            let result = unsafe {
+                (*fs).$pkcs11_function.unwrap()(arg, vector.as_mut_ptr(), vector.len() as CK_ULONG)
+            };
+            Ok(Response::new(result, String::new()))
+        }
     };
-    Ok(Response::new(result, String::new()))
+    (
+        $function_name:ident,
+        $arg_type_1:ty,
+        $arg_type_2:ty,
+        $vector_type:ty,
+        $pkcs11_function:ident
+    ) => {
+        fn $function_name(
+            msg: Request,
+            fs: CK_FUNCTION_LIST_PTR,
+        ) -> Result<Response, serde_json::Error> {
+            let (arg1, arg2, mut vector): ($arg_type_1, $arg_type_2, $vector_type) =
+                from_str(msg.args())?;
+            let result = unsafe {
+                (*fs).$pkcs11_function.unwrap()(
+                    arg1,
+                    arg2,
+                    vector.as_mut_ptr(),
+                    vector.len() as CK_ULONG,
+                )
+            };
+            Ok(Response::new(result, String::new()))
+        }
+    };
 }
+
+simple_pkcs11_vector_function!(c_seed_random, CK_SESSION_HANDLE, Vec<CK_BYTE>, C_SeedRandom);
+simple_pkcs11_vector_function!(
+    c_login,
+    CK_SESSION_HANDLE,
+    CK_USER_TYPE,
+    Vec<CK_UTF8CHAR>,
+    C_Login
+);
 
 fn c_generate_random(
     msg: Request,
