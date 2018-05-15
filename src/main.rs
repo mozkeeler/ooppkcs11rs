@@ -94,6 +94,8 @@ fn main() {
             "C_CloseAllSessions" => c_close_all_sessions(msg, function_list_ptr),
             "C_GetAttributeValue" => c_get_attribute_value(msg, function_list_ptr),
             "C_Logout" => c_logout(msg, function_list_ptr),
+            "C_SeedRandom" => c_seed_random(msg, function_list_ptr),
+            "C_GenerateRandom" => c_generate_random(msg, function_list_ptr),
             _ => Ok(Response::new(CKR_FUNCTION_NOT_SUPPORTED, String::new())),
         };
         match response {
@@ -335,6 +337,35 @@ fn c_get_attribute_value(
         for attribute in template {
             args.template.push(Attribute::from_raw(attribute));
         }
+        Response::new(CKR_OK, to_string(&args)?)
+    } else {
+        Response::new(result, String::new())
+    };
+    Ok(msg_back)
+}
+
+fn c_seed_random(msg: Request, fs: CK_FUNCTION_LIST_PTR) -> Result<Response, serde_json::Error> {
+    let mut args: CSeedRandomArgs = from_str(msg.args())?;
+    let result = unsafe {
+        (*fs).C_SeedRandom.unwrap()(args.session_handle, args.seed.as_mut_ptr(), args.length)
+    };
+    Ok(Response::new(result, String::new()))
+}
+
+fn c_generate_random(
+    msg: Request,
+    fs: CK_FUNCTION_LIST_PTR,
+) -> Result<Response, serde_json::Error> {
+    let mut args: CGenerateRandomArgs = from_str(msg.args())?;
+    // We could have the parent do this...?
+    args.data.reserve(args.length as usize);
+    unsafe {
+        args.data.set_len(args.length as usize);
+    }
+    let result = unsafe {
+        (*fs).C_GenerateRandom.unwrap()(args.session_handle, args.data.as_mut_ptr(), args.length)
+    };
+    let msg_back = if result == CKR_OK {
         Response::new(CKR_OK, to_string(&args)?)
     } else {
         Response::new(result, String::new())

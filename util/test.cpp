@@ -9,6 +9,7 @@
 #include "nss.h"
 #include "prerror.h"
 #include "secmod.h"
+#include "secmodt.h"
 #include "pk11pub.h"
 #include "cert.h"
 
@@ -21,7 +22,9 @@ int main(int argc, char* argv[])
   }
 
   char buf[64];
-  if (snprintf(buf, sizeof(buf), "%s", "./libnssckbi.so") >= sizeof(buf)) {
+  //const char* modulePath = "/usr/lib64/libnssckbi.so";
+  const char* modulePath = "/usr/lib64/libykcs11.so.1";
+  if (snprintf(buf, sizeof(buf), "%s", modulePath) >= sizeof(buf)) {
     std::cout << "(test) not enough buffer space?" << std::endl;
     return 1;
   }
@@ -40,8 +43,6 @@ int main(int argc, char* argv[])
   if (SECMOD_AddNewModuleEx("Some Module", pathBuf, 0, 0, buf, nullptr)
   */
   const char* path = "/home/keeler/src/ooppkcs11rs/target/debug/libooppkcs11rs.so";
-  //const char* path = "/usr/lib64/libykcs11.so.1"; // YKCS11 isn't working?
-  //const char* path = "/usr/lib64/libnssckbi.so";
   if (SECMOD_AddNewModuleEx("Some Module", path, 0, 0, buf, nullptr) != SECSuccess) {
     std::cout << "(test) SECMOD_AddNewModuleEx failed: ";
     std::cout << PR_ErrorToString(PR_GetError(), 0) << std::endl;
@@ -52,14 +53,32 @@ int main(int argc, char* argv[])
   if (!certs) {
     std::cout << "(test) PK11_ListCerts failed: ";
     std::cout << PR_ErrorToString(PR_GetError(), 0) << std::endl;
-  } else {
-    for (CERTCertListNode* n = CERT_LIST_HEAD(certs); !CERT_LIST_END(n, certs);
-         n = CERT_LIST_NEXT(n)) {
-      std::cout << "'" << n->cert->subjectName << "' issued by '";
-      std::cout << n->cert->issuerName << "'" << std::endl;
-    }
-    CERT_DestroyCertList(certs);
+    return 1;
   }
+  for (CERTCertListNode* n = CERT_LIST_HEAD(certs); !CERT_LIST_END(n, certs);
+       n = CERT_LIST_NEXT(n)) {
+    std::cout << "'" << n->cert->subjectName << "' issued by '";
+    std::cout << n->cert->issuerName << "'" << std::endl;
+  }
+  CERT_DestroyCertList(certs);
+
+  SECMODModule* module = SECMOD_FindModule("Some Module");
+  if (!module) {
+    std::cout << "(test) SECMOD_FindModule failed: ";
+    std::cout << PR_ErrorToString(PR_GetError(), 0) << std::endl;
+    return 1;
+  }
+  for (int i = 0; i < module->slotCount; i++) {
+    PK11SlotInfo* slot = module->slots[i];
+    if (PK11_NeedUserInit(slot)) {
+      if (PK11_InitPin(slot, "", "password") != SECSuccess) {
+        std::cout << "(test) PK11_InitPin failed: ";
+        std::cout << PR_ErrorToString(PR_GetError(), 0) << std::endl;
+      }
+    }
+  }
+
+  SECMOD_DestroyModule(module);
 
   if (NSS_Shutdown() != SECSuccess) {
     std::cout << "NSS_Shutdown failed: " << PR_ErrorToString(PR_GetError(), 0);

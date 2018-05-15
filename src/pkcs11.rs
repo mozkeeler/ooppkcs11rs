@@ -149,3 +149,17 @@ pub struct CGetAttributeValueArgs {
     pub object_handle: CK_OBJECT_HANDLE,
     pub template: Vec<Attribute>,
 }
+
+#[derive(Deserialize, Serialize)]
+pub struct CSeedRandomArgs {
+    pub session_handle: CK_SESSION_HANDLE,
+    pub seed: Vec<CK_BYTE>,
+    pub length: CK_ULONG,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct CGenerateRandomArgs {
+    pub session_handle: CK_SESSION_HANDLE,
+    pub data: Vec<CK_BYTE>,
+    pub length: CK_ULONG,
+}

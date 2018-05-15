@@ -779,22 +779,62 @@ extern "C" fn C_DeriveKey(
     println!("C_DeriveKey");
     CKR_FUNCTION_NOT_SUPPORTED
 }
+
 extern "C" fn C_SeedRandom(
     hSession: CK_SESSION_HANDLE,
     pSeed: CK_BYTE_PTR,
     ulSeedLen: CK_ULONG,
 ) -> CK_RV {
-    println!("C_SeedRandom");
-    CKR_FUNCTION_NOT_SUPPORTED
+    println!("parent: C_SeedRandom");
+    let mut tx_guard = TX.lock().unwrap();
+    let mut rx_guard = RX.lock().unwrap();
+    let mut args = CSeedRandomArgs {
+        session_handle: hSession,
+        seed: Vec::with_capacity(ulSeedLen as usize),
+        length: ulSeedLen,
+    };
+    unsafe {
+        for i in 0..ulSeedLen {
+            args.seed.push(*pSeed.offset(i as isize));
+        }
+    }
+    let msg = Request::new("C_SeedRandom", to_string(&args).unwrap());
+    tx_guard.as_mut().unwrap().send(msg).unwrap();
+    let response = rx_guard.as_mut().unwrap().recv().unwrap();
+    println!("parent received {:?}", response);
+    response.status()
 }
+
 extern "C" fn C_GenerateRandom(
     hSession: CK_SESSION_HANDLE,
     RandomData: CK_BYTE_PTR,
     ulRandomLen: CK_ULONG,
 ) -> CK_RV {
-    println!("C_GenerateRandom");
-    CKR_FUNCTION_NOT_SUPPORTED
+    println!("parent: C_GenerateRandom");
+    let mut tx_guard = TX.lock().unwrap();
+    let mut rx_guard = RX.lock().unwrap();
+    let mut args = CGenerateRandomArgs {
+        session_handle: hSession,
+        data: Vec::new(),
+        length: ulRandomLen,
+    };
+    let msg = Request::new("C_GenerateRandom", to_string(&args).unwrap());
+    tx_guard.as_mut().unwrap().send(msg).unwrap();
+    let response = rx_guard.as_mut().unwrap().recv().unwrap();
+    println!("parent received {:?}", response);
+    if response.status() == CKR_OK {
+        let mut result: CGenerateRandomArgs = from_str(response.args()).unwrap();
+        unsafe {
+            for i in 0..ulRandomLen {
+                *RandomData.offset(i as isize) = result.data[i as usize];
+            }
+        }
+        CKR_OK
+    } else {
+        response.status()
+    }
 }
+
 extern "C" fn C_GetFunctionStatus(hSession: CK_SESSION_HANDLE) -> CK_RV {
     println!("C_GetFunctionStatus");
     CKR_FUNCTION_NOT_SUPPORTED

@@ -6,4 +6,4 @@ test: test.cpp
 	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o test test.cpp
 
 clean:
-	rm -f test cert8.db key3.db secmod.db
+	rm -f test cert8.db key3.db secmod.db cert9.db key4.db pkcs11.txt
