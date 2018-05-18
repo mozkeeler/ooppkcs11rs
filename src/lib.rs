@@ -1,4 +1,4 @@
-extern crate ipc_channel;
+extern crate byteorder;
 #[macro_use]
 extern crate lazy_static;
 extern crate libc;
@@ -7,6 +7,7 @@ extern crate serde_derive;
 extern crate serde;
 extern crate serde_json;
 
+mod ipc;
 mod pkcs11;
 mod pkcs11parent;
 mod pkcs11types;

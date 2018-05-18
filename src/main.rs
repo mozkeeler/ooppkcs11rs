@@ -1,40 +1,23 @@
+extern crate byteorder;
 #[macro_use]
 extern crate dlopen_derive;
 extern crate dlopen;
-extern crate ipc_channel;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
 
 use dlopen::wrapper::{Container, WrapperApi};
-use ipc_channel::ipc::{IpcOneShotServer, IpcReceiver, IpcSender};
 use serde_json::{from_str, to_string};
-use std::io::{self, Error, ErrorKind, Read};
+use std::io::{self, stdin, stdout, Error, ErrorKind, Read};
 
+mod ipc;
 mod pkcs11;
 mod pkcs11types;
 
+use ipc::*;
 use pkcs11::*;
 use pkcs11types::*;
-
-// The ChildStdin in the parent process is supposed to close our stdin after sending the name of the
-// ipc server. For some reason this isn't happening correctly, so reading until we're closed doesn't
-// work. As a workaround, read until we hit a null byte.
-fn read_string_from_stdin() -> Result<String, Error> {
-    let mut total_buf = Vec::new();
-    loop {
-        let mut buf = Vec::with_capacity(100);
-        buf.resize(100, 0);
-        io::stdin().read(&mut buf)?;
-        for b in buf {
-            if b == 0 {
-                return String::from_utf8(total_buf).map_err(|e| Error::new(ErrorKind::Other, e));
-            }
-            total_buf.push(b);
-        }
-    }
-}
 
 #[derive(WrapperApi)]
 struct Pkcs11Module {
@@ -42,16 +25,13 @@ struct Pkcs11Module {
 }
 
 fn main() {
-    let server_name = read_string_from_stdin().expect("couldn't read server name");
-    let tx: IpcSender<Response> = IpcSender::connect(server_name).unwrap();
-    let (server, name): (IpcOneShotServer<Request>, String) = IpcOneShotServer::new().unwrap();
-    tx.send(Response::new(CKR_OK, name))
-        .expect("couldn't send server name to parent");
-    let (rx, msg): (IpcReceiver<Request>, Request) = server.accept().unwrap();
+    let mut tx = IpcSender::new(stdout());
+    let mut rx = IpcReceiver::new(stdin());
+    let msg: Request = rx.recv().unwrap();
     if msg.function() != "C_Initialize" {
         panic!("unexpected first message from parent");
     }
-    println!("loading library at '{}'", msg.args());
+    eprintln!("loading library at '{}'", msg.args());
     let module: Container<Pkcs11Module> = unsafe { Container::load(msg.args()) }.unwrap();
     let mut function_list_ptr: CK_FUNCTION_LIST_PTR = std::ptr::null();
     module.C_GetFunctionList(&mut function_list_ptr);
@@ -59,7 +39,7 @@ fn main() {
         let null_args = std::ptr::null::<CK_C_INITIALIZE_ARGS>();
         (*function_list_ptr).C_Initialize.unwrap()(null_args as *mut CK_C_INITIALIZE_ARGS)
     };
-    println!("C_Initialize: {}", result);
+    eprintln!("C_Initialize: {}", result);
     tx.send(Response::new(result, String::new())).unwrap();
     if result != CKR_OK {
         return;
@@ -67,14 +47,14 @@ fn main() {
 
     let mut keep_going = true;
     while keep_going {
-        let msg = match rx.recv() {
+        let msg: Request = match rx.recv() {
             Ok(msg) => msg,
             Err(e) => {
-                println!("error receiving request from parent: {}", e);
+                eprintln!("error receiving request from parent: {}", e);
                 return;
             }
         };
-        println!("child received {:?}", msg);
+        eprintln!("child received {:?}", msg);
         let response = match msg.function() {
             "C_Finalize" => {
                 keep_going = false;
@@ -103,12 +83,12 @@ fn main() {
             Ok(response) => match tx.send(response) {
                 Ok(()) => {}
                 Err(e) => {
-                    println!("error sending response to parent: '{}'", e);
+                    eprintln!("error sending response to parent: '{}'", e);
                     keep_going = false;
                 }
             },
             Err(e) => {
-                println!("error performing operation: '{}'", e);
+                eprintln!("error performing operation: '{}'", e);
                 keep_going = false;
             }
         }
@@ -119,7 +99,7 @@ fn c_finalize(fs: CK_FUNCTION_LIST_PTR) -> Result<Response, serde_json::Error> {
     let result = unsafe {
         (*fs).C_Finalize.unwrap()(std::ptr::null::<std::os::raw::c_void>() as CK_VOID_PTR)
     };
-    println!("C_Finalize: {}", result);
+    eprintln!("C_Finalize: {}", result);
     Ok(Response::new(result, String::new()))
 }
 
@@ -128,7 +108,7 @@ macro_rules! fill_struct_pkcs11_function {
         fn $function_name(fs: CK_FUNCTION_LIST_PTR) -> Result<Response, serde_json::Error> {
             let mut out_arg: $out_arg_type = Default::default();
             let result = unsafe { (*fs).$pkcs11_function.unwrap()(&mut out_arg) };
-            println!("{}: {}", stringify!($pkcs11_function), result);
+            eprintln!("{}: {}", stringify!($pkcs11_function), result);
             let payload = if result == CKR_OK {
                 to_string(&out_arg)?
             } else {
@@ -145,7 +125,7 @@ macro_rules! fill_struct_pkcs11_function {
             let in_arg: $in_arg_type = from_str(msg.args())?;
             let mut out_arg: $out_arg_type = Default::default();
             let result = unsafe { (*fs).$pkcs11_function.unwrap()(in_arg, &mut out_arg) };
-            println!("{}: {}", stringify!($pkcs11_function), result);
+            eprintln!("{}: {}", stringify!($pkcs11_function), result);
             let payload = if result == CKR_OK {
                 to_string(&out_arg)?
             } else {
@@ -174,7 +154,7 @@ fn c_get_slot_list(msg: Request, fs: CK_FUNCTION_LIST_PTR) -> Result<Response, s
             &mut args.slot_count,
         )
     };
-    println!("C_GetSlotList: {}", result);
+    eprintln!("C_GetSlotList: {}", result);
     let msg_back = if result == CKR_OK {
         match &mut args.slot_list {
             &mut Some(ref mut slot_list) => unsafe { slot_list.set_len(args.slot_count as usize) },
@@ -209,7 +189,7 @@ fn c_get_mechanism_list(
             &mut args.mechanism_count,
         )
     };
-    println!("C_GetMechanismList: {}", result);
+    eprintln!("C_GetMechanismList: {}", result);
     let msg_back = if result == CKR_OK {
         match &mut args.mechanism_list {
             &mut Some(ref mut mechanism_list) => unsafe {
@@ -235,7 +215,7 @@ fn c_open_session(msg: Request, fs: CK_FUNCTION_LIST_PTR) -> Result<Response, se
             &mut args.session_handle,
         )
     };
-    println!("C_OpenSession: {}", result);
+    eprintln!("C_OpenSession: {}", result);
     let msg_back = if result == CKR_OK {
         Response::new(CKR_OK, to_string(&args)?)
     } else {
@@ -304,7 +284,7 @@ macro_rules! simple_pkcs11_function {
         ) -> Result<Response, serde_json::Error> {
             let arg: $arg_type = from_str(msg.args())?;
             let result = unsafe { (*fs).$pkcs11_function.unwrap()(arg) };
-            println!("{}: {}", stringify!($pkcs11_function), result);
+            eprintln!("{}: {}", stringify!($pkcs11_function), result);
             Ok(Response::new(result, String::new()))
         }
     };

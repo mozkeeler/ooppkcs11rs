@@ -2,22 +2,22 @@
 #![allow(non_snake_case)]
 #![allow(unused)]
 
-use ipc_channel::ipc::{IpcOneShotServer, IpcReceiver, IpcSender};
 use libc::getenv;
 use serde_json::{from_str, to_string};
 use std::ffi::{CStr, CString};
 use std::io::Write;
 use std::ops::DerefMut;
-use std::process::{Command, Stdio};
+use std::process::{ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Mutex;
 
+use ipc::*;
 use pkcs11::*;
 use pkcs11types::*;
 
 lazy_static! {
     // NB: Acquire these in the order they're declared here.
-    static ref TX: Mutex<Option<IpcSender<Request>>> = Mutex::new(None);
-    static ref RX: Mutex<Option<IpcReceiver<Response>>> = Mutex::new(None);
+    static ref TX: Mutex<Option<IpcSender<ChildStdin>>> = Mutex::new(None);
+    static ref RX: Mutex<Option<IpcReceiver<ChildStdout>>> = Mutex::new(None);
 }
 
 fn get_library_to_load_path(init_args: *const CK_C_INITIALIZE_ARGS) -> Result<String, CK_RV> {
@@ -41,42 +41,45 @@ fn get_library_to_load_path(init_args: *const CK_C_INITIALIZE_ARGS) -> Result<St
 }
 
 extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
-    println!("parent: C_Initialize");
+    eprintln!("parent: C_Initialize");
     let mut tx_guard = TX.lock().unwrap();
     let mut rx_guard = RX.lock().unwrap();
     let mut child = Command::new("/home/keeler/src/ooppkcs11rs/target/debug/ooppkcs11rs")
         .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
         .spawn()
         .expect("failed to start ooppkcs11rs");
-    let (server, name): (IpcOneShotServer<Response>, String) = IpcOneShotServer::new().unwrap();
-    {
-        let mut stdin = child.stdin.as_mut().expect("failed to open child.stdin");
-        stdin
-            .write_all(name.as_bytes())
-            .expect("failed to send server name to child");
-        // This is a workaround because dropping stdin doesn't seem to actually close the child's
-        // stdin as documented.
-        stdin
-            .write_all(&[0])
-            .expect("failed to send null terminator to child");
-    }
-    let (rx, msg): (IpcReceiver<Response>, Response) = server.accept().unwrap();
-    let tx: IpcSender<Request> = IpcSender::connect(msg.args().to_owned()).unwrap();
+    let write_to_child = match child.stdin {
+        Some(stdin) => stdin,
+        None => return CKR_GENERAL_ERROR,
+    };
+    let read_from_child = match child.stdout {
+        Some(stdout) => stdout,
+        None => return CKR_GENERAL_ERROR,
+    };
+    let mut tx = IpcSender::new(write_to_child);
+    let mut rx = IpcReceiver::new(read_from_child);
     let args = match get_library_to_load_path(pInitArgs) {
         Ok(args) => args,
         Err(e) => return e,
     };
     let msg = Request::new("C_Initialize", args);
-    tx.send(msg).unwrap();
-    let msg_back = rx.recv().unwrap();
-    println!("parent received {:?}", msg_back);
+    if tx.send(msg).is_err() {
+        return CKR_GENERAL_ERROR;
+    }
+    eprintln!("parent sent C_Initialize");
+    let msg_back: Response = match rx.recv() {
+        Ok(msg_back) => msg_back,
+        Err(_) => return CKR_GENERAL_ERROR,
+    };
+    eprintln!("parent received {:?}", msg_back);
     *tx_guard = Some(tx);
     *rx_guard = Some(rx);
     msg_back.status()
 }
 
 extern "C" fn C_Finalize(pReserved: CK_VOID_PTR) -> CK_RV {
-    println!("parent: C_Finalize");
+    eprintln!("parent: C_Finalize");
     let mut tx_guard = TX.lock().unwrap();
     let mut rx_guard = RX.lock().unwrap();
     tx_guard
@@ -84,15 +87,15 @@ extern "C" fn C_Finalize(pReserved: CK_VOID_PTR) -> CK_RV {
         .unwrap()
         .send(Request::new("C_Finalize", String::new()))
         .unwrap();
-    let response = rx_guard.as_mut().unwrap().recv().unwrap();
-    println!("parent received {:?}", response);
+    let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+    eprintln!("parent received {:?}", response);
     response.status()
 }
 
 macro_rules! fill_struct_pkcs11_function {
     ($pkcs11_function:ident, $out_arg_type:ty) => {
         extern "C" fn $pkcs11_function(out_arg: $out_arg_type) -> CK_RV {
-            println!("parent: {}", stringify!($pkcs11_function));
+            eprintln!("parent: {}", stringify!($pkcs11_function));
             let mut tx_guard = TX.lock().unwrap();
             let mut rx_guard = RX.lock().unwrap();
             tx_guard
@@ -100,8 +103,8 @@ macro_rules! fill_struct_pkcs11_function {
                 .unwrap()
                 .send(Request::new(stringify!($pkcs11_function), String::new()))
                 .unwrap();
-            let response = rx_guard.as_mut().unwrap().recv().unwrap();
-            println!("parent received {:?}", response);
+            let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+            eprintln!("parent received {:?}", response);
             if response.status() == CKR_OK {
                 let arg = from_str(response.args()).unwrap();
                 unsafe {
@@ -115,13 +118,13 @@ macro_rules! fill_struct_pkcs11_function {
     };
     ($pkcs11_function:ident, $in_arg_type:ty, $out_arg_type:ty) => {
         extern "C" fn $pkcs11_function(in_arg: $in_arg_type, out_arg: $out_arg_type) -> CK_RV {
-            println!("parent: {}", stringify!($pkcs11_function));
+            eprintln!("parent: {}", stringify!($pkcs11_function));
             let mut tx_guard = TX.lock().unwrap();
             let mut rx_guard = RX.lock().unwrap();
             let msg = Request::new(stringify!($pkcs11_function), to_string(&in_arg).unwrap());
             tx_guard.as_mut().unwrap().send(msg).unwrap();
-            let response = rx_guard.as_mut().unwrap().recv().unwrap();
-            println!("parent received {:?}", response);
+            let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+            eprintln!("parent received {:?}", response);
             if response.status() == CKR_OK {
                 let arg = from_str(response.args()).unwrap();
                 unsafe {
@@ -142,7 +145,7 @@ extern "C" fn C_GetSlotList(
     pSlotList: CK_SLOT_ID_PTR,
     pulCount: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("parent: C_GetSlotList");
+    eprintln!("parent: C_GetSlotList");
     let mut tx_guard = TX.lock().unwrap();
     let mut rx_guard = RX.lock().unwrap();
     let slot_list = if pSlotList.is_null() {
@@ -165,8 +168,8 @@ extern "C" fn C_GetSlotList(
     };
     let msg = Request::new("C_GetSlotList", to_string(&args).unwrap());
     tx_guard.as_mut().unwrap().send(msg).unwrap();
-    let response = rx_guard.as_mut().unwrap().recv().unwrap();
-    println!("parent received {:?}", response);
+    let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+    eprintln!("parent received {:?}", response);
     if response.status() == CKR_OK {
         let mut result: CGetSlotListArgs = from_str(response.args()).unwrap();
         unsafe {
@@ -195,7 +198,7 @@ extern "C" fn C_GetMechanismList(
     pMechanismList: CK_MECHANISM_TYPE_PTR,
     pulCount: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("parent: C_GetMechanismList");
+    eprintln!("parent: C_GetMechanismList");
     let mut tx_guard = TX.lock().unwrap();
     let mut rx_guard = RX.lock().unwrap();
     let mechanism_list = if pMechanismList.is_null() {
@@ -215,8 +218,8 @@ extern "C" fn C_GetMechanismList(
     };
     let msg = Request::new("C_GetMechanismList", to_string(&args).unwrap());
     tx_guard.as_mut().unwrap().send(msg).unwrap();
-    let response = rx_guard.as_mut().unwrap().recv().unwrap();
-    println!("parent received {:?}", response);
+    let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+    eprintln!("parent received {:?}", response);
     if response.status() == CKR_OK {
         let mut result: CGetMechanismListArgs = from_str(response.args()).unwrap();
         unsafe {
@@ -242,7 +245,7 @@ extern "C" fn C_GetMechanismInfo(
     type_: CK_MECHANISM_TYPE,
     pInfo: CK_MECHANISM_INFO_PTR,
 ) -> CK_RV {
-    println!("C_GetMechanismInfo");
+    eprintln!("C_GetMechanismInfo");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_InitToken(
@@ -251,7 +254,7 @@ extern "C" fn C_InitToken(
     ulPinLen: CK_ULONG,
     pLabel: CK_UTF8CHAR_PTR,
 ) -> CK_RV {
-    println!("C_InitToken");
+    eprintln!("C_InitToken");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_InitPIN(
@@ -259,7 +262,7 @@ extern "C" fn C_InitPIN(
     pPin: CK_UTF8CHAR_PTR,
     ulPinLen: CK_ULONG,
 ) -> CK_RV {
-    println!("C_InitPIN");
+    eprintln!("C_InitPIN");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_SetPIN(
@@ -269,7 +272,7 @@ extern "C" fn C_SetPIN(
     pNewPin: CK_UTF8CHAR_PTR,
     ulNewLen: CK_ULONG,
 ) -> CK_RV {
-    println!("C_SetPIN");
+    eprintln!("C_SetPIN");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -280,7 +283,7 @@ extern "C" fn C_OpenSession(
     Notify: CK_NOTIFY,
     phSession: CK_SESSION_HANDLE_PTR,
 ) -> CK_RV {
-    println!("parent: C_OpenSession");
+    eprintln!("parent: C_OpenSession");
     let mut tx_guard = TX.lock().unwrap();
     let mut rx_guard = RX.lock().unwrap();
     let args = COpenSessionArgs {
@@ -290,8 +293,8 @@ extern "C" fn C_OpenSession(
     };
     let msg = Request::new("C_OpenSession", to_string(&args).unwrap());
     tx_guard.as_mut().unwrap().send(msg).unwrap();
-    let response = rx_guard.as_mut().unwrap().recv().unwrap();
-    println!("parent received {:?}", response);
+    let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+    eprintln!("parent received {:?}", response);
     if response.status() == CKR_OK {
         let args: COpenSessionArgs = from_str(response.args()).unwrap();
         unsafe {
@@ -306,13 +309,13 @@ extern "C" fn C_OpenSession(
 macro_rules! simple_pkcs11_function {
     ($pkcs11_function:ident, $arg_type:ty) => {
         extern "C" fn $pkcs11_function(arg: $arg_type) -> CK_RV {
-            println!("parent: {}", stringify!($pkcs11_function));
+            eprintln!("parent: {}", stringify!($pkcs11_function));
             let mut tx_guard = TX.lock().unwrap();
             let mut rx_guard = RX.lock().unwrap();
             let msg = Request::new(stringify!($pkcs11_function), to_string(&arg).unwrap());
             tx_guard.as_mut().unwrap().send(msg).unwrap();
-            let response = rx_guard.as_mut().unwrap().recv().unwrap();
-            println!("parent received {:?}", response);
+            let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+            eprintln!("parent received {:?}", response);
             response.status()
         }
     };
@@ -328,7 +331,7 @@ extern "C" fn C_GetOperationState(
     pOperationState: CK_BYTE_PTR,
     pulOperationStateLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("C_GetOperationState");
+    eprintln!("C_GetOperationState");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_SetOperationState(
@@ -338,7 +341,7 @@ extern "C" fn C_SetOperationState(
     hEncryptionKey: CK_OBJECT_HANDLE,
     hAuthenticationKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    println!("C_SetOperationState");
+    eprintln!("C_SetOperationState");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -349,7 +352,7 @@ macro_rules! simple_pkcs11_vector_function {
             data: *mut $type_in_vector,
             len: CK_ULONG,
         ) -> CK_RV {
-            println!("parent: {}", stringify!($pkcs11_function));
+            eprintln!("parent: {}", stringify!($pkcs11_function));
             let mut tx_guard = TX.lock().unwrap();
             let mut rx_guard = RX.lock().unwrap();
             let mut vector = Vec::with_capacity(len as usize);
@@ -361,8 +364,8 @@ macro_rules! simple_pkcs11_vector_function {
             let args = (arg, vector);
             let msg = Request::new(stringify!($pkcs11_function), to_string(&args).unwrap());
             tx_guard.as_mut().unwrap().send(msg).unwrap();
-            let response = rx_guard.as_mut().unwrap().recv().unwrap();
-            println!("parent received {:?}", response);
+            let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+            eprintln!("parent received {:?}", response);
             response.status()
         }
     };
@@ -373,7 +376,7 @@ macro_rules! simple_pkcs11_vector_function {
             data: *mut $type_in_vector,
             len: CK_ULONG,
         ) -> CK_RV {
-            println!("parent: {}", stringify!($pkcs11_function));
+            eprintln!("parent: {}", stringify!($pkcs11_function));
             let mut tx_guard = TX.lock().unwrap();
             let mut rx_guard = RX.lock().unwrap();
             let mut vector = Vec::with_capacity(len as usize);
@@ -385,8 +388,8 @@ macro_rules! simple_pkcs11_vector_function {
             let args = (arg1, arg2, vector);
             let msg = Request::new(stringify!($pkcs11_function), to_string(&args).unwrap());
             tx_guard.as_mut().unwrap().send(msg).unwrap();
-            let response = rx_guard.as_mut().unwrap().recv().unwrap();
-            println!("parent received {:?}", response);
+            let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+            eprintln!("parent received {:?}", response);
             response.status()
         }
     };
@@ -403,7 +406,7 @@ extern "C" fn C_CreateObject(
     ulCount: CK_ULONG,
     phObject: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
-    println!("C_CreateObject");
+    eprintln!("C_CreateObject");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_CopyObject(
@@ -413,11 +416,11 @@ extern "C" fn C_CopyObject(
     ulCount: CK_ULONG,
     phNewObject: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
-    println!("C_CopyObject");
+    eprintln!("C_CopyObject");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DestroyObject(hSession: CK_SESSION_HANDLE, hObject: CK_OBJECT_HANDLE) -> CK_RV {
-    println!("C_DestroyObject");
+    eprintln!("C_DestroyObject");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_GetObjectSize(
@@ -425,7 +428,7 @@ extern "C" fn C_GetObjectSize(
     hObject: CK_OBJECT_HANDLE,
     pulSize: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("C_GetObjectSize");
+    eprintln!("C_GetObjectSize");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -435,7 +438,7 @@ extern "C" fn C_GetAttributeValue(
     pTemplate: CK_ATTRIBUTE_PTR,
     ulCount: CK_ULONG,
 ) -> CK_RV {
-    println!("parent: C_GetAttributeValue");
+    eprintln!("parent: C_GetAttributeValue");
     let mut tx_guard = TX.lock().unwrap();
     let mut rx_guard = RX.lock().unwrap();
     let mut args = CGetAttributeValueArgs {
@@ -451,8 +454,8 @@ extern "C" fn C_GetAttributeValue(
     }
     let msg = Request::new("C_GetAttributeValue", to_string(&args).unwrap());
     tx_guard.as_mut().unwrap().send(msg).unwrap();
-    let response = rx_guard.as_mut().unwrap().recv().unwrap();
-    println!("parent received {:?}", response);
+    let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+    eprintln!("parent received {:?}", response);
     if response.status() == CKR_OK {
         let args: CGetAttributeValueArgs = from_str(response.args()).unwrap();
         unsafe {
@@ -470,7 +473,7 @@ extern "C" fn C_SetAttributeValue(
     pTemplate: CK_ATTRIBUTE_PTR,
     ulCount: CK_ULONG,
 ) -> CK_RV {
-    println!("C_SetAttributeValue");
+    eprintln!("C_SetAttributeValue");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -479,7 +482,7 @@ extern "C" fn C_FindObjectsInit(
     pTemplate: CK_ATTRIBUTE_PTR,
     ulCount: CK_ULONG,
 ) -> CK_RV {
-    println!("parent: C_FindObjectsInit");
+    eprintln!("parent: C_FindObjectsInit");
     let mut tx_guard = TX.lock().unwrap();
     let mut rx_guard = RX.lock().unwrap();
     let mut args = CFindObjectsInitArgs {
@@ -494,8 +497,8 @@ extern "C" fn C_FindObjectsInit(
     }
     let msg = Request::new("C_FindObjectsInit", to_string(&args).unwrap());
     tx_guard.as_mut().unwrap().send(msg).unwrap();
-    let response = rx_guard.as_mut().unwrap().recv().unwrap();
-    println!("parent received {:?}", response);
+    let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+    eprintln!("parent received {:?}", response);
     response.status()
 }
 
@@ -505,7 +508,7 @@ extern "C" fn C_FindObjects(
     ulMaxObjectCount: CK_ULONG,
     pulObjectCount: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("parent: C_FindObjects");
+    eprintln!("parent: C_FindObjects");
     let mut tx_guard = TX.lock().unwrap();
     let mut rx_guard = RX.lock().unwrap();
     let mut args = CFindObjectsArgs {
@@ -515,8 +518,8 @@ extern "C" fn C_FindObjects(
     };
     let msg = Request::new("C_FindObjects", to_string(&args).unwrap());
     tx_guard.as_mut().unwrap().send(msg).unwrap();
-    let response = rx_guard.as_mut().unwrap().recv().unwrap();
-    println!("parent received {:?}", response);
+    let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+    eprintln!("parent received {:?}", response);
     let args: CFindObjectsArgs = from_str(response.args()).unwrap();
     if response.status() == CKR_OK {
         unsafe {
@@ -536,7 +539,7 @@ extern "C" fn C_EncryptInit(
     pMechanism: CK_MECHANISM_PTR,
     hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    println!("C_EncryptInit");
+    eprintln!("C_EncryptInit");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_Encrypt(
@@ -546,7 +549,7 @@ extern "C" fn C_Encrypt(
     pEncryptedData: CK_BYTE_PTR,
     pulEncryptedDataLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("C_Encrypt");
+    eprintln!("C_Encrypt");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_EncryptUpdate(
@@ -556,7 +559,7 @@ extern "C" fn C_EncryptUpdate(
     pEncryptedPart: CK_BYTE_PTR,
     pulEncryptedPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("C_EncryptUpdate");
+    eprintln!("C_EncryptUpdate");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_EncryptFinal(
@@ -564,7 +567,7 @@ extern "C" fn C_EncryptFinal(
     pLastEncryptedPart: CK_BYTE_PTR,
     pulLastEncryptedPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("C_EncryptFinal");
+    eprintln!("C_EncryptFinal");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DecryptInit(
@@ -572,7 +575,7 @@ extern "C" fn C_DecryptInit(
     pMechanism: CK_MECHANISM_PTR,
     hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    println!("C_DecryptInit");
+    eprintln!("C_DecryptInit");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_Decrypt(
@@ -582,7 +585,7 @@ extern "C" fn C_Decrypt(
     pData: CK_BYTE_PTR,
     pulDataLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("C_Decrypt");
+    eprintln!("C_Decrypt");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DecryptUpdate(
@@ -592,7 +595,7 @@ extern "C" fn C_DecryptUpdate(
     pPart: CK_BYTE_PTR,
     pulPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("C_DecryptUpdate");
+    eprintln!("C_DecryptUpdate");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DecryptFinal(
@@ -600,11 +603,11 @@ extern "C" fn C_DecryptFinal(
     pLastPart: CK_BYTE_PTR,
     pulLastPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("C_DecryptFinal");
+    eprintln!("C_DecryptFinal");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DigestInit(hSession: CK_SESSION_HANDLE, pMechanism: CK_MECHANISM_PTR) -> CK_RV {
-    println!("C_DigestInit");
+    eprintln!("C_DigestInit");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_Digest(
@@ -614,7 +617,7 @@ extern "C" fn C_Digest(
     pDigest: CK_BYTE_PTR,
     pulDigestLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("C_Digest");
+    eprintln!("C_Digest");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DigestUpdate(
@@ -622,11 +625,11 @@ extern "C" fn C_DigestUpdate(
     pPart: CK_BYTE_PTR,
     ulPartLen: CK_ULONG,
 ) -> CK_RV {
-    println!("C_DigestUpdate");
+    eprintln!("C_DigestUpdate");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DigestKey(hSession: CK_SESSION_HANDLE, hKey: CK_OBJECT_HANDLE) -> CK_RV {
-    println!("C_DigestKey");
+    eprintln!("C_DigestKey");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DigestFinal(
@@ -634,7 +637,7 @@ extern "C" fn C_DigestFinal(
     pDigest: CK_BYTE_PTR,
     pulDigestLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("C_DigestFinal");
+    eprintln!("C_DigestFinal");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_SignInit(
@@ -642,7 +645,7 @@ extern "C" fn C_SignInit(
     pMechanism: CK_MECHANISM_PTR,
     hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    println!("C_SignInit");
+    eprintln!("C_SignInit");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_Sign(
@@ -652,7 +655,7 @@ extern "C" fn C_Sign(
     pSignature: CK_BYTE_PTR,
     pulSignatureLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("C_Sign");
+    eprintln!("C_Sign");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_SignUpdate(
@@ -660,7 +663,7 @@ extern "C" fn C_SignUpdate(
     pPart: CK_BYTE_PTR,
     ulPartLen: CK_ULONG,
 ) -> CK_RV {
-    println!("C_SignUpdate");
+    eprintln!("C_SignUpdate");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_SignFinal(
@@ -668,7 +671,7 @@ extern "C" fn C_SignFinal(
     pSignature: CK_BYTE_PTR,
     pulSignatureLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("C_SignFinal");
+    eprintln!("C_SignFinal");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_SignRecoverInit(
@@ -676,7 +679,7 @@ extern "C" fn C_SignRecoverInit(
     pMechanism: CK_MECHANISM_PTR,
     hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    println!("C_SignRecoverInit");
+    eprintln!("C_SignRecoverInit");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_SignRecover(
@@ -686,7 +689,7 @@ extern "C" fn C_SignRecover(
     pSignature: CK_BYTE_PTR,
     pulSignatureLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("C_SignRecover");
+    eprintln!("C_SignRecover");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_VerifyInit(
@@ -694,7 +697,7 @@ extern "C" fn C_VerifyInit(
     pMechanism: CK_MECHANISM_PTR,
     hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    println!("C_VerifyInit");
+    eprintln!("C_VerifyInit");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_Verify(
@@ -704,7 +707,7 @@ extern "C" fn C_Verify(
     pSignature: CK_BYTE_PTR,
     ulSignatureLen: CK_ULONG,
 ) -> CK_RV {
-    println!("C_Verify");
+    eprintln!("C_Verify");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_VerifyUpdate(
@@ -712,7 +715,7 @@ extern "C" fn C_VerifyUpdate(
     pPart: CK_BYTE_PTR,
     ulPartLen: CK_ULONG,
 ) -> CK_RV {
-    println!("C_VerifyUpdate");
+    eprintln!("C_VerifyUpdate");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_VerifyFinal(
@@ -720,7 +723,7 @@ extern "C" fn C_VerifyFinal(
     pSignature: CK_BYTE_PTR,
     ulSignatureLen: CK_ULONG,
 ) -> CK_RV {
-    println!("C_VerifyFinal");
+    eprintln!("C_VerifyFinal");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_VerifyRecoverInit(
@@ -728,7 +731,7 @@ extern "C" fn C_VerifyRecoverInit(
     pMechanism: CK_MECHANISM_PTR,
     hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    println!("C_VerifyRecoverInit");
+    eprintln!("C_VerifyRecoverInit");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_VerifyRecover(
@@ -738,7 +741,7 @@ extern "C" fn C_VerifyRecover(
     pData: CK_BYTE_PTR,
     pulDataLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("C_VerifyRecover");
+    eprintln!("C_VerifyRecover");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DigestEncryptUpdate(
@@ -748,7 +751,7 @@ extern "C" fn C_DigestEncryptUpdate(
     pEncryptedPart: CK_BYTE_PTR,
     pulEncryptedPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("C_DigestEncryptUpdate");
+    eprintln!("C_DigestEncryptUpdate");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DecryptDigestUpdate(
@@ -758,7 +761,7 @@ extern "C" fn C_DecryptDigestUpdate(
     pPart: CK_BYTE_PTR,
     pulPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("C_DecryptDigestUpdate");
+    eprintln!("C_DecryptDigestUpdate");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_SignEncryptUpdate(
@@ -768,7 +771,7 @@ extern "C" fn C_SignEncryptUpdate(
     pEncryptedPart: CK_BYTE_PTR,
     pulEncryptedPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("C_SignEncryptUpdate");
+    eprintln!("C_SignEncryptUpdate");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DecryptVerifyUpdate(
@@ -778,7 +781,7 @@ extern "C" fn C_DecryptVerifyUpdate(
     pPart: CK_BYTE_PTR,
     pulPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("C_DecryptVerifyUpdate");
+    eprintln!("C_DecryptVerifyUpdate");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_GenerateKey(
@@ -788,7 +791,7 @@ extern "C" fn C_GenerateKey(
     ulCount: CK_ULONG,
     phKey: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
-    println!("C_GenerateKey");
+    eprintln!("C_GenerateKey");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_GenerateKeyPair(
@@ -801,7 +804,7 @@ extern "C" fn C_GenerateKeyPair(
     phPublicKey: CK_OBJECT_HANDLE_PTR,
     phPrivateKey: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
-    println!("C_GenerateKeyPair");
+    eprintln!("C_GenerateKeyPair");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_WrapKey(
@@ -812,7 +815,7 @@ extern "C" fn C_WrapKey(
     pWrappedKey: CK_BYTE_PTR,
     pulWrappedKeyLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    println!("C_WrapKey");
+    eprintln!("C_WrapKey");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_UnwrapKey(
@@ -825,7 +828,7 @@ extern "C" fn C_UnwrapKey(
     ulAttributeCount: CK_ULONG,
     phKey: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
-    println!("C_UnwrapKey");
+    eprintln!("C_UnwrapKey");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DeriveKey(
@@ -836,7 +839,7 @@ extern "C" fn C_DeriveKey(
     ulAttributeCount: CK_ULONG,
     phKey: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
-    println!("C_DeriveKey");
+    eprintln!("C_DeriveKey");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -845,7 +848,7 @@ extern "C" fn C_GenerateRandom(
     RandomData: CK_BYTE_PTR,
     ulRandomLen: CK_ULONG,
 ) -> CK_RV {
-    println!("parent: C_GenerateRandom");
+    eprintln!("parent: C_GenerateRandom");
     let mut tx_guard = TX.lock().unwrap();
     let mut rx_guard = RX.lock().unwrap();
     let mut args = CGenerateRandomArgs {
@@ -855,8 +858,8 @@ extern "C" fn C_GenerateRandom(
     };
     let msg = Request::new("C_GenerateRandom", to_string(&args).unwrap());
     tx_guard.as_mut().unwrap().send(msg).unwrap();
-    let response = rx_guard.as_mut().unwrap().recv().unwrap();
-    println!("parent received {:?}", response);
+    let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+    eprintln!("parent received {:?}", response);
     if response.status() == CKR_OK {
         let mut result: CGenerateRandomArgs = from_str(response.args()).unwrap();
         unsafe {
@@ -871,11 +874,11 @@ extern "C" fn C_GenerateRandom(
 }
 
 extern "C" fn C_GetFunctionStatus(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    println!("C_GetFunctionStatus");
+    eprintln!("C_GetFunctionStatus");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_CancelFunction(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    println!("C_CancelFunction");
+    eprintln!("C_CancelFunction");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_WaitForSlotEvent(
@@ -883,7 +886,7 @@ extern "C" fn C_WaitForSlotEvent(
     pSlot: CK_SLOT_ID_PTR,
     pRserved: CK_VOID_PTR,
 ) -> CK_RV {
-    println!("C_WaitForSlotEvent");
+    eprintln!("C_WaitForSlotEvent");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 

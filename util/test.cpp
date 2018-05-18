@@ -15,35 +15,21 @@
 
 int main(int argc, char* argv[])
 {
-  if (NSS_Initialize("sql:.", "", "", SECMOD_DB, NSS_INIT_NOROOTINIT | NSS_INIT_NOCERTDB) != SECSuccess) {
-    std::cout << "(test) NSS_Initialize failed: " << PR_ErrorToString(PR_GetError(), 0);
-    std::cout << std::endl;
+  if (NSS_Initialize("sql:.", "", "",
+                     SECMOD_DB, NSS_INIT_NOROOTINIT | NSS_INIT_NOCERTDB)
+        != SECSuccess) {
+    std::cout << "(test) NSS_Initialize failed: ";
+    std::cout << PR_ErrorToString(PR_GetError(), 0) << std::endl;
     return 1;
   }
 
-  char buf[64];
-  //const char* modulePath = "/usr/lib64/libnssckbi.so";
-  const char* modulePath = "/usr/lib64/libykcs11.so.1";
-  if (snprintf(buf, sizeof(buf), "%s", modulePath) >= sizeof(buf)) {
-    std::cout << "(test) not enough buffer space?" << std::endl;
-    return 1;
-  }
   int unused;
   SECMOD_DeleteModule("Some Module", &unused);
-  /*
-  char pathBuf[2048];
-  if (!getcwd(pathBuf, sizeof(pathBuf))) {
-    std::cout << "(test) couldn't getcwd?" << std::endl;
-    return 1;
-  }
 
-  // NB: this can fail
-  snprintf(pathBuf + strlen(pathBuf), sizeof(pathBuf) - strlen(pathBuf),
-           "/libooppkcs11.so");
-  if (SECMOD_AddNewModuleEx("Some Module", pathBuf, 0, 0, buf, nullptr)
-  */
   const char* path = "/home/keeler/src/ooppkcs11rs/target/debug/libooppkcs11rs.so";
-  if (SECMOD_AddNewModuleEx("Some Module", path, 0, 0, buf, nullptr) != SECSuccess) {
+  char params[] = "/usr/lib64/libykcs11.so.1";
+  if (SECMOD_AddNewModuleEx("Some Module", path, 0, 0, params, nullptr)
+        != SECSuccess) {
     std::cout << "(test) SECMOD_AddNewModuleEx failed: ";
     std::cout << PR_ErrorToString(PR_GetError(), 0) << std::endl;
     return 1;
