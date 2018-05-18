@@ -3,8 +3,9 @@
 #![allow(unused)]
 
 use ipc_channel::ipc::{IpcOneShotServer, IpcReceiver, IpcSender};
+use libc::getenv;
 use serde_json::{from_str, to_string};
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::io::Write;
 use std::ops::DerefMut;
 use std::process::{Command, Stdio};
@@ -17,6 +18,26 @@ lazy_static! {
     // NB: Acquire these in the order they're declared here.
     static ref TX: Mutex<Option<IpcSender<Request>>> = Mutex::new(None);
     static ref RX: Mutex<Option<IpcReceiver<Response>>> = Mutex::new(None);
+}
+
+fn get_library_to_load_path(init_args: *const CK_C_INITIALIZE_ARGS) -> Result<String, CK_RV> {
+    let ooppkcs11rs_load_this_env_var = CString::new("OOPPKCS11RS_LOAD_THIS").unwrap();
+    unsafe {
+        let library_path = getenv(ooppkcs11rs_load_this_env_var.as_ptr());
+        if !library_path.is_null() {
+            return Ok(CStr::from_ptr(library_path).to_string_lossy().into_owned());
+        }
+    }
+    if init_args.is_null() {
+        return Err(CKR_GENERAL_ERROR);
+    }
+    unsafe {
+        let library_path = (*init_args).pReserved as *const i8;
+        if library_path.is_null() {
+            return Err(CKR_GENERAL_ERROR);
+        }
+        Ok(CStr::from_ptr(library_path).to_string_lossy().into_owned())
+    }
 }
 
 extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
@@ -41,14 +62,9 @@ extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
     }
     let (rx, msg): (IpcReceiver<Response>, Response) = server.accept().unwrap();
     let tx: IpcSender<Request> = IpcSender::connect(msg.args().to_owned()).unwrap();
-    let args = if !pInitArgs.is_null() {
-        unsafe {
-            CStr::from_ptr((*pInitArgs).pReserved as *const i8)
-                .to_string_lossy()
-                .into_owned()
-        }
-    } else {
-        String::new()
+    let args = match get_library_to_load_path(pInitArgs) {
+        Ok(args) => args,
+        Err(e) => return e,
     };
     let msg = Request::new("C_Initialize", args);
     tx.send(msg).unwrap();
