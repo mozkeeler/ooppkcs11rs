@@ -2,6 +2,7 @@ extern crate byteorder;
 #[macro_use]
 extern crate dlopen_derive;
 extern crate dlopen;
+extern crate libc;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -9,6 +10,7 @@ extern crate serde_json;
 
 use dlopen::wrapper::{Container, WrapperApi};
 use serde_json::{from_str, to_string};
+use std::fs;
 use std::io::{self, stdin, stdout, Error, ErrorKind, Read};
 
 mod ipc;
@@ -25,6 +27,26 @@ struct Pkcs11Module {
 }
 
 fn main() {
+    let mut fds_to_close = Vec::new();
+    for entry in fs::read_dir("/proc/self/fd/").unwrap() {
+        let path = match entry {
+            Ok(entry) => entry.path(),
+            Err(_) => continue,
+        };
+        let name = path.file_name().unwrap().to_string_lossy();
+        let fd = match name.parse::<libc::c_int>() {
+            Ok(fd) => fd,
+            Err(_) => continue,
+        };
+        if fd != 0 && fd != 1 && fd != 2 {
+            fds_to_close.push(fd);
+        }
+    }
+    for fd in fds_to_close {
+        unsafe {
+            libc::close(fd);
+        }
+    }
     let mut tx = IpcSender::new(stdout());
     let mut rx = IpcReceiver::new(stdin());
     let msg: Request = rx.recv().unwrap();
