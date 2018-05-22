@@ -15,8 +15,7 @@
 
 int main(int argc, char* argv[])
 {
-  if (NSS_Initialize("sql:.", "", "",
-                     SECMOD_DB, NSS_INIT_NOROOTINIT | NSS_INIT_NOCERTDB)
+  if (NSS_Initialize("sql:.", "", "", SECMOD_DB, NSS_INIT_NOROOTINIT)
         != SECSuccess) {
     std::cout << "(test) NSS_Initialize failed: ";
     std::cout << PR_ErrorToString(PR_GetError(), 0) << std::endl;
@@ -34,19 +33,6 @@ int main(int argc, char* argv[])
     std::cout << PR_ErrorToString(PR_GetError(), 0) << std::endl;
     return 1;
   }
-
-  CERTCertList* certs = PK11_ListCerts(PK11CertListUnique, nullptr);
-  if (!certs) {
-    std::cout << "(test) PK11_ListCerts failed: ";
-    std::cout << PR_ErrorToString(PR_GetError(), 0) << std::endl;
-    return 1;
-  }
-  for (CERTCertListNode* n = CERT_LIST_HEAD(certs); !CERT_LIST_END(n, certs);
-       n = CERT_LIST_NEXT(n)) {
-    std::cout << "'" << n->cert->subjectName << "' issued by '";
-    std::cout << n->cert->issuerName << "'" << std::endl;
-  }
-  CERT_DestroyCertList(certs);
 
   SECMODModule* module = SECMOD_FindModule("Some Module");
   if (!module) {
@@ -71,6 +57,22 @@ int main(int argc, char* argv[])
     }
     */
   }
+
+  std::cout << "BEGIN LISTING CERTS..." << std::endl;
+  CERTCertList* certs = PK11_ListCerts(PK11CertListUnique, nullptr);
+  if (!certs) {
+    std::cout << "(test) PK11_ListCerts failed: ";
+    std::cout << PR_ErrorToString(PR_GetError(), 0) << std::endl;
+    return 1;
+  }
+  for (CERTCertListNode* n = CERT_LIST_HEAD(certs); !CERT_LIST_END(n, certs);
+       n = CERT_LIST_NEXT(n)) {
+    std::cout << "'" << n->cert->subjectName << "' issued by '";
+    std::cout << n->cert->issuerName << "'" << std::endl;
+  }
+  CERT_DestroyCertList(certs);
+  std::cout << "END LISTING CERTS..." << std::endl;
+
 
   SECMOD_DestroyModule(module);
 

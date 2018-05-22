@@ -245,7 +245,7 @@ extern "C" fn C_GetMechanismInfo(
     type_: CK_MECHANISM_TYPE,
     pInfo: CK_MECHANISM_INFO_PTR,
 ) -> CK_RV {
-    eprintln!("C_GetMechanismInfo");
+    eprintln!("NOT SUPPORTED C_GetMechanismInfo");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_InitToken(
@@ -254,7 +254,7 @@ extern "C" fn C_InitToken(
     ulPinLen: CK_ULONG,
     pLabel: CK_UTF8CHAR_PTR,
 ) -> CK_RV {
-    eprintln!("C_InitToken");
+    eprintln!("NOT SUPPORTED C_InitToken");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_InitPIN(
@@ -262,7 +262,7 @@ extern "C" fn C_InitPIN(
     pPin: CK_UTF8CHAR_PTR,
     ulPinLen: CK_ULONG,
 ) -> CK_RV {
-    eprintln!("C_InitPIN");
+    eprintln!("NOT SUPPORTED C_InitPIN");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_SetPIN(
@@ -272,7 +272,7 @@ extern "C" fn C_SetPIN(
     pNewPin: CK_UTF8CHAR_PTR,
     ulNewLen: CK_ULONG,
 ) -> CK_RV {
-    eprintln!("C_SetPIN");
+    eprintln!("NOT SUPPORTED C_SetPIN");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -331,7 +331,7 @@ extern "C" fn C_GetOperationState(
     pOperationState: CK_BYTE_PTR,
     pulOperationStateLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    eprintln!("C_GetOperationState");
+    eprintln!("NOT SUPPORTED C_GetOperationState");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_SetOperationState(
@@ -341,7 +341,7 @@ extern "C" fn C_SetOperationState(
     hEncryptionKey: CK_OBJECT_HANDLE,
     hAuthenticationKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    eprintln!("C_SetOperationState");
+    eprintln!("NOT SUPPORTED C_SetOperationState");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -406,7 +406,7 @@ extern "C" fn C_CreateObject(
     ulCount: CK_ULONG,
     phObject: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
-    eprintln!("C_CreateObject");
+    eprintln!("NOT SUPPORTED C_CreateObject");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_CopyObject(
@@ -416,11 +416,11 @@ extern "C" fn C_CopyObject(
     ulCount: CK_ULONG,
     phNewObject: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
-    eprintln!("C_CopyObject");
+    eprintln!("NOT SUPPORTED C_CopyObject");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DestroyObject(hSession: CK_SESSION_HANDLE, hObject: CK_OBJECT_HANDLE) -> CK_RV {
-    eprintln!("C_DestroyObject");
+    eprintln!("NOT SUPPORTED C_DestroyObject");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_GetObjectSize(
@@ -428,7 +428,7 @@ extern "C" fn C_GetObjectSize(
     hObject: CK_OBJECT_HANDLE,
     pulSize: CK_ULONG_PTR,
 ) -> CK_RV {
-    eprintln!("C_GetObjectSize");
+    eprintln!("NOT SUPPORTED C_GetObjectSize");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -473,7 +473,7 @@ extern "C" fn C_SetAttributeValue(
     pTemplate: CK_ATTRIBUTE_PTR,
     ulCount: CK_ULONG,
 ) -> CK_RV {
-    eprintln!("C_SetAttributeValue");
+    eprintln!("NOT SUPPORTED C_SetAttributeValue");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -539,7 +539,7 @@ extern "C" fn C_EncryptInit(
     pMechanism: CK_MECHANISM_PTR,
     hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    eprintln!("C_EncryptInit");
+    eprintln!("NOT SUPPORTED C_EncryptInit");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_Encrypt(
@@ -549,7 +549,7 @@ extern "C" fn C_Encrypt(
     pEncryptedData: CK_BYTE_PTR,
     pulEncryptedDataLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    eprintln!("C_Encrypt");
+    eprintln!("NOT SUPPORTED C_Encrypt");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_EncryptUpdate(
@@ -559,7 +559,7 @@ extern "C" fn C_EncryptUpdate(
     pEncryptedPart: CK_BYTE_PTR,
     pulEncryptedPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    eprintln!("C_EncryptUpdate");
+    eprintln!("NOT SUPPORTED C_EncryptUpdate");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_EncryptFinal(
@@ -567,7 +567,7 @@ extern "C" fn C_EncryptFinal(
     pLastEncryptedPart: CK_BYTE_PTR,
     pulLastEncryptedPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    eprintln!("C_EncryptFinal");
+    eprintln!("NOT SUPPORTED C_EncryptFinal");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DecryptInit(
@@ -575,7 +575,7 @@ extern "C" fn C_DecryptInit(
     pMechanism: CK_MECHANISM_PTR,
     hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    eprintln!("C_DecryptInit");
+    eprintln!("NOT SUPPORTED C_DecryptInit");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_Decrypt(
@@ -585,7 +585,7 @@ extern "C" fn C_Decrypt(
     pData: CK_BYTE_PTR,
     pulDataLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    eprintln!("C_Decrypt");
+    eprintln!("NOT SUPPORTED C_Decrypt");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DecryptUpdate(
@@ -595,7 +595,7 @@ extern "C" fn C_DecryptUpdate(
     pPart: CK_BYTE_PTR,
     pulPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    eprintln!("C_DecryptUpdate");
+    eprintln!("NOT SUPPORTED C_DecryptUpdate");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DecryptFinal(
@@ -603,11 +603,11 @@ extern "C" fn C_DecryptFinal(
     pLastPart: CK_BYTE_PTR,
     pulLastPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    eprintln!("C_DecryptFinal");
+    eprintln!("NOT SUPPORTED C_DecryptFinal");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DigestInit(hSession: CK_SESSION_HANDLE, pMechanism: CK_MECHANISM_PTR) -> CK_RV {
-    eprintln!("C_DigestInit");
+    eprintln!("NOT SUPPORTED C_DigestInit");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_Digest(
@@ -617,7 +617,7 @@ extern "C" fn C_Digest(
     pDigest: CK_BYTE_PTR,
     pulDigestLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    eprintln!("C_Digest");
+    eprintln!("NOT SUPPORTED C_Digest");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DigestUpdate(
@@ -625,11 +625,11 @@ extern "C" fn C_DigestUpdate(
     pPart: CK_BYTE_PTR,
     ulPartLen: CK_ULONG,
 ) -> CK_RV {
-    eprintln!("C_DigestUpdate");
+    eprintln!("NOT SUPPORTED C_DigestUpdate");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DigestKey(hSession: CK_SESSION_HANDLE, hKey: CK_OBJECT_HANDLE) -> CK_RV {
-    eprintln!("C_DigestKey");
+    eprintln!("NOT SUPPORTED C_DigestKey");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DigestFinal(
@@ -637,17 +637,57 @@ extern "C" fn C_DigestFinal(
     pDigest: CK_BYTE_PTR,
     pulDigestLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    eprintln!("C_DigestFinal");
+    eprintln!("NOT SUPPORTED C_DigestFinal");
     CKR_FUNCTION_NOT_SUPPORTED
 }
+
 extern "C" fn C_SignInit(
     hSession: CK_SESSION_HANDLE,
     pMechanism: CK_MECHANISM_PTR,
     hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    eprintln!("C_SignInit");
-    CKR_FUNCTION_NOT_SUPPORTED
+    eprintln!("parent: C_SignInit");
+    let mut tx_guard = TX.lock().unwrap();
+    let mut rx_guard = RX.lock().unwrap();
+    let mechanism = unsafe { *pMechanism };
+    let args = (hSession, Mechanism::from_raw(mechanism), hKey);
+    let msg = Request::new("C_SignInit", to_string(&args).unwrap());
+    tx_guard.as_mut().unwrap().send(msg).unwrap();
+    let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+    eprintln!("parent received {:?}", response);
+    response.status()
 }
+
+fn copy_bytes_in(bytes: CK_BYTE_PTR, len: CK_ULONG) -> Vec<CK_BYTE> {
+    let mut copy = Vec::with_capacity(len as usize);
+    for i in 0..len as isize {
+        unsafe {
+            copy.push(*bytes.offset(i));
+        }
+    }
+    copy
+}
+
+fn copy_bytes_out(
+    bytes_in: Vec<CK_BYTE>,
+    bytes_out: CK_BYTE_PTR,
+    bytes_out_capacity: CK_ULONG,
+    bytes_out_len: CK_ULONG_PTR,
+) -> Result<(), CK_RV> {
+    if bytes_in.len() > bytes_out_capacity as usize {
+        return Err(CKR_BUFFER_TOO_SMALL);
+    }
+    for i in 0..bytes_in.len() as isize {
+        unsafe {
+            *(bytes_out.offset(i)) = bytes_in[i as usize];
+        }
+    }
+    unsafe {
+        *bytes_out_len = bytes_in.len() as CK_ULONG;
+    }
+    Ok(())
+}
+
 extern "C" fn C_Sign(
     hSession: CK_SESSION_HANDLE,
     pData: CK_BYTE_PTR,
@@ -655,15 +695,34 @@ extern "C" fn C_Sign(
     pSignature: CK_BYTE_PTR,
     pulSignatureLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    eprintln!("C_Sign");
-    CKR_FUNCTION_NOT_SUPPORTED
+    eprintln!("parent: C_Sign");
+    let mut tx_guard = TX.lock().unwrap();
+    let mut rx_guard = RX.lock().unwrap();
+    let data = copy_bytes_in(pData, ulDataLen);
+    let signature_capacity = unsafe { *pulSignatureLen };
+    let mut signature = Vec::with_capacity(signature_capacity as usize);
+    signature.resize(signature_capacity as usize, 0);
+    let args = (hSession, data, signature);
+    let msg = Request::new("C_Sign", to_string(&args).unwrap());
+    tx_guard.as_mut().unwrap().send(msg).unwrap();
+    let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+    eprintln!("parent received {:?}", response);
+    if response.status() == CKR_OK {
+        let signature: Vec<CK_BYTE> = from_str(response.args()).unwrap();
+        match copy_bytes_out(signature, pSignature, signature_capacity, pulSignatureLen) {
+            Ok(()) => {}
+            Err(result) => return result,
+        }
+    }
+    response.status()
 }
+
 extern "C" fn C_SignUpdate(
     hSession: CK_SESSION_HANDLE,
     pPart: CK_BYTE_PTR,
     ulPartLen: CK_ULONG,
 ) -> CK_RV {
-    eprintln!("C_SignUpdate");
+    eprintln!("NOT SUPPORTED C_SignUpdate");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_SignFinal(
@@ -671,7 +730,7 @@ extern "C" fn C_SignFinal(
     pSignature: CK_BYTE_PTR,
     pulSignatureLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    eprintln!("C_SignFinal");
+    eprintln!("NOT SUPPORTED C_SignFinal");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_SignRecoverInit(
@@ -679,7 +738,7 @@ extern "C" fn C_SignRecoverInit(
     pMechanism: CK_MECHANISM_PTR,
     hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    eprintln!("C_SignRecoverInit");
+    eprintln!("NOT SUPPORTED C_SignRecoverInit");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_SignRecover(
@@ -689,7 +748,7 @@ extern "C" fn C_SignRecover(
     pSignature: CK_BYTE_PTR,
     pulSignatureLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    eprintln!("C_SignRecover");
+    eprintln!("NOT SUPPORTED C_SignRecover");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_VerifyInit(
@@ -697,7 +756,7 @@ extern "C" fn C_VerifyInit(
     pMechanism: CK_MECHANISM_PTR,
     hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    eprintln!("C_VerifyInit");
+    eprintln!("NOT SUPPORTED C_VerifyInit");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_Verify(
@@ -707,7 +766,7 @@ extern "C" fn C_Verify(
     pSignature: CK_BYTE_PTR,
     ulSignatureLen: CK_ULONG,
 ) -> CK_RV {
-    eprintln!("C_Verify");
+    eprintln!("NOT SUPPORTED C_Verify");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_VerifyUpdate(
@@ -715,7 +774,7 @@ extern "C" fn C_VerifyUpdate(
     pPart: CK_BYTE_PTR,
     ulPartLen: CK_ULONG,
 ) -> CK_RV {
-    eprintln!("C_VerifyUpdate");
+    eprintln!("NOT SUPPORTED C_VerifyUpdate");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_VerifyFinal(
@@ -723,7 +782,7 @@ extern "C" fn C_VerifyFinal(
     pSignature: CK_BYTE_PTR,
     ulSignatureLen: CK_ULONG,
 ) -> CK_RV {
-    eprintln!("C_VerifyFinal");
+    eprintln!("NOT SUPPORTED C_VerifyFinal");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_VerifyRecoverInit(
@@ -731,7 +790,7 @@ extern "C" fn C_VerifyRecoverInit(
     pMechanism: CK_MECHANISM_PTR,
     hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    eprintln!("C_VerifyRecoverInit");
+    eprintln!("NOT SUPPORTED C_VerifyRecoverInit");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_VerifyRecover(
@@ -741,7 +800,7 @@ extern "C" fn C_VerifyRecover(
     pData: CK_BYTE_PTR,
     pulDataLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    eprintln!("C_VerifyRecover");
+    eprintln!("NOT SUPPORTED C_VerifyRecover");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DigestEncryptUpdate(
@@ -751,7 +810,7 @@ extern "C" fn C_DigestEncryptUpdate(
     pEncryptedPart: CK_BYTE_PTR,
     pulEncryptedPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    eprintln!("C_DigestEncryptUpdate");
+    eprintln!("NOT SUPPORTED C_DigestEncryptUpdate");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DecryptDigestUpdate(
@@ -761,7 +820,7 @@ extern "C" fn C_DecryptDigestUpdate(
     pPart: CK_BYTE_PTR,
     pulPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    eprintln!("C_DecryptDigestUpdate");
+    eprintln!("NOT SUPPORTED C_DecryptDigestUpdate");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_SignEncryptUpdate(
@@ -771,7 +830,7 @@ extern "C" fn C_SignEncryptUpdate(
     pEncryptedPart: CK_BYTE_PTR,
     pulEncryptedPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    eprintln!("C_SignEncryptUpdate");
+    eprintln!("NOT SUPPORTED C_SignEncryptUpdate");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DecryptVerifyUpdate(
@@ -781,7 +840,7 @@ extern "C" fn C_DecryptVerifyUpdate(
     pPart: CK_BYTE_PTR,
     pulPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    eprintln!("C_DecryptVerifyUpdate");
+    eprintln!("NOT SUPPORTED C_DecryptVerifyUpdate");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_GenerateKey(
@@ -791,7 +850,7 @@ extern "C" fn C_GenerateKey(
     ulCount: CK_ULONG,
     phKey: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
-    eprintln!("C_GenerateKey");
+    eprintln!("NOT SUPPORTED C_GenerateKey");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_GenerateKeyPair(
@@ -804,7 +863,7 @@ extern "C" fn C_GenerateKeyPair(
     phPublicKey: CK_OBJECT_HANDLE_PTR,
     phPrivateKey: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
-    eprintln!("C_GenerateKeyPair");
+    eprintln!("NOT SUPPORTED C_GenerateKeyPair");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_WrapKey(
@@ -815,7 +874,7 @@ extern "C" fn C_WrapKey(
     pWrappedKey: CK_BYTE_PTR,
     pulWrappedKeyLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    eprintln!("C_WrapKey");
+    eprintln!("NOT SUPPORTED C_WrapKey");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_UnwrapKey(
@@ -828,7 +887,7 @@ extern "C" fn C_UnwrapKey(
     ulAttributeCount: CK_ULONG,
     phKey: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
-    eprintln!("C_UnwrapKey");
+    eprintln!("NOT SUPPORTED C_UnwrapKey");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_DeriveKey(
@@ -839,7 +898,7 @@ extern "C" fn C_DeriveKey(
     ulAttributeCount: CK_ULONG,
     phKey: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
-    eprintln!("C_DeriveKey");
+    eprintln!("NOT SUPPORTED C_DeriveKey");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -874,11 +933,11 @@ extern "C" fn C_GenerateRandom(
 }
 
 extern "C" fn C_GetFunctionStatus(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    eprintln!("C_GetFunctionStatus");
+    eprintln!("NOT SUPPORTED C_GetFunctionStatus");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_CancelFunction(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    eprintln!("C_CancelFunction");
+    eprintln!("NOT SUPPORTED C_CancelFunction");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_WaitForSlotEvent(
@@ -886,7 +945,7 @@ extern "C" fn C_WaitForSlotEvent(
     pSlot: CK_SLOT_ID_PTR,
     pRserved: CK_VOID_PTR,
 ) -> CK_RV {
-    eprintln!("C_WaitForSlotEvent");
+    eprintln!("NOT SUPPORTED C_WaitForSlotEvent");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 

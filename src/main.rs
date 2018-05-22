@@ -99,6 +99,8 @@ fn main() {
             "C_Logout" => c_logout(msg, function_list_ptr),
             "C_SeedRandom" => c_seed_random(msg, function_list_ptr),
             "C_GenerateRandom" => c_generate_random(msg, function_list_ptr),
+            "C_SignInit" => c_sign_init(msg, function_list_ptr),
+            "C_Sign" => c_sign(msg, function_list_ptr),
             _ => Ok(Response::new(CKR_FUNCTION_NOT_SUPPORTED, String::new())),
         };
         match response {
@@ -410,6 +412,37 @@ fn c_generate_random(
     };
     let msg_back = if result == CKR_OK {
         Response::new(CKR_OK, to_string(&args)?)
+    } else {
+        Response::new(result, String::new())
+    };
+    Ok(msg_back)
+}
+
+fn c_sign_init(msg: Request, fs: CK_FUNCTION_LIST_PTR) -> Result<Response, serde_json::Error> {
+    let (session, mechanism, key): (CK_SESSION_HANDLE, Mechanism, CK_OBJECT_HANDLE) =
+        from_str(msg.args())?;
+    let result = unsafe { (*fs).C_SignInit.unwrap()(session, &mut mechanism.to_raw(), key) };
+    Ok(Response::new(result, String::new()))
+}
+
+fn c_sign(msg: Request, fs: CK_FUNCTION_LIST_PTR) -> Result<Response, serde_json::Error> {
+    let (session, mut data, mut signature): (CK_SESSION_HANDLE, Vec<CK_BYTE>, Vec<CK_BYTE>) =
+        from_str(msg.args())?;
+    let mut signature_capacity = signature.len() as CK_ULONG;
+    let result = unsafe {
+        (*fs).C_Sign.unwrap()(
+            session,
+            data.as_mut_ptr(),
+            data.len() as CK_ULONG,
+            signature.as_mut_ptr(),
+            &mut signature_capacity,
+        )
+    };
+    let msg_back = if result == CKR_OK {
+        unsafe {
+            signature.set_len(signature_capacity as usize);
+        }
+        Response::new(result, to_string(&signature)?)
     } else {
         Response::new(result, String::new())
     };

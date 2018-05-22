@@ -130,6 +130,66 @@ impl Attribute {
     }
 }
 
+// This is silly - we should be able to parameterize/macro this.
+#[derive(Deserialize, Serialize)]
+pub struct Mechanism {
+    pub mechanism: CK_MECHANISM_TYPE,
+    pub parameter: Option<Vec<u8>>,
+    pub len: CK_ULONG,
+}
+
+impl Mechanism {
+    pub fn from_raw(mechanism: CK_MECHANISM) -> Mechanism {
+        let parameter = if !mechanism.pParameter.is_null() {
+            let byte_ptr = mechanism.pParameter as *const u8;
+            let mut parameter = Vec::with_capacity(mechanism.ulParameterLen as usize);
+            unsafe {
+                for i in 0..mechanism.ulParameterLen {
+                    parameter.push(*byte_ptr.offset(i as isize));
+                }
+            }
+            Some(parameter)
+        } else {
+            None
+        };
+        Mechanism {
+            mechanism: mechanism.mechanism,
+            parameter,
+            len: mechanism.ulParameterLen,
+        }
+    }
+
+    pub fn to_raw(&self) -> CK_MECHANISM {
+        let ptr = match self.parameter {
+            Some(ref parameter) => parameter.as_ptr() as CK_VOID_PTR,
+            None => ptr::null::<os::raw::c_void>() as CK_VOID_PTR,
+        };
+        CK_MECHANISM {
+            mechanism: self.mechanism,
+            pParameter: ptr,
+            ulParameterLen: self.len,
+        }
+    }
+
+    pub fn into_raw(&self, mechanism: *mut CK_MECHANISM) {
+        match self.parameter {
+            Some(ref parameter) => unsafe {
+                let ptr = (*mechanism).pParameter as *mut u8;
+                if !ptr.is_null() {
+                    for i in 0..self.len {
+                        (*ptr.offset(i as isize)) = parameter[i as usize];
+                    }
+                }
+            },
+            None => {}
+        }
+        unsafe {
+            (*mechanism).mechanism = self.mechanism;
+            (*mechanism).ulParameterLen = self.len;
+        }
+    }
+}
+
 #[derive(Deserialize, Serialize)]
 pub struct CFindObjectsInitArgs {
     pub session_handle: CK_SESSION_HANDLE,
