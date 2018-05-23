@@ -26,7 +26,7 @@ int main(int argc, char* argv[])
   SECMOD_DeleteModule("Some Module", &unused);
 
   const char* path = "/home/keeler/src/ooppkcs11rs/target/debug/libooppkcs11rs.so";
-  char params[] = "/usr/lib64/libykcs11.so.1";
+  char params[] = "/usr/lib64/onepin-opensc-pkcs11.so";
   if (SECMOD_AddNewModuleEx("Some Module", path, 0, 0, params, nullptr)
         != SECSuccess) {
     std::cout << "(test) SECMOD_AddNewModuleEx failed: ";

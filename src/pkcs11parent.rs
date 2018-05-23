@@ -44,11 +44,17 @@ extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
     eprintln!("parent: C_Initialize");
     let mut tx_guard = TX.lock().unwrap();
     let mut rx_guard = RX.lock().unwrap();
-    let mut child = Command::new("/home/keeler/src/ooppkcs11rs/target/debug/ooppkcs11rs")
+    let mut child = match Command::new("/home/keeler/src/ooppkcs11rs/target/debug/ooppkcs11rs")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
-        .expect("failed to start ooppkcs11rs");
+    {
+        Ok(child) => child,
+        Err(e) => {
+            eprintln!("failed to start ooppkcs11rs: {}", e);
+            return CKR_GENERAL_ERROR;
+        }
+    };
     let write_to_child = match child.stdin {
         Some(stdin) => stdin,
         None => return CKR_GENERAL_ERROR,
@@ -78,18 +84,62 @@ extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
     msg_back.status()
 }
 
+macro_rules! send {
+    ($tx_guard:ident, $to_send:expr) => {
+        match $tx_guard.as_mut().unwrap().send($to_send) {
+            Ok(()) => {}
+            Err(e) => {
+                eprintln!("error sending to child: {}", e);
+                return CKR_GENERAL_ERROR;
+            }
+        }
+    };
+}
+
+macro_rules! recv {
+    ($rx_guard:ident) => {
+        match $rx_guard.as_mut().unwrap().recv() {
+            Ok(result) => result,
+            Err(e) => {
+                eprintln!("error reading from child: {}", e);
+                return CKR_GENERAL_ERROR;
+            }
+        }
+    };
+}
+
 extern "C" fn C_Finalize(pReserved: CK_VOID_PTR) -> CK_RV {
     eprintln!("parent: C_Finalize");
     let mut tx_guard = TX.lock().unwrap();
     let mut rx_guard = RX.lock().unwrap();
-    tx_guard
-        .as_mut()
-        .unwrap()
-        .send(Request::new("C_Finalize", String::new()))
-        .unwrap();
-    let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+    send!(tx_guard, Request::new("C_Finalize", String::new()));
+    let response: Response = recv!(rx_guard);
     eprintln!("parent received {:?}", response);
     response.status()
+}
+
+macro_rules! deserialize_or_return_error {
+    ($response_args:expr) => {
+        match from_str($response_args) {
+            Ok(args) => args,
+            Err(e) => {
+                eprintln!("failed to deserialize response: {}", e);
+                return CKR_GENERAL_ERROR;
+            }
+        }
+    };
+}
+
+macro_rules! serialize_or_return_error {
+    ($request_args:expr) => {
+        match to_string($request_args) {
+            Ok(serialized) => serialized,
+            Err(e) => {
+                eprintln!("failed to serialize request: {}", e);
+                return CKR_GENERAL_ERROR;
+            }
+        }
+    };
 }
 
 macro_rules! fill_struct_pkcs11_function {
@@ -98,15 +148,14 @@ macro_rules! fill_struct_pkcs11_function {
             eprintln!("parent: {}", stringify!($pkcs11_function));
             let mut tx_guard = TX.lock().unwrap();
             let mut rx_guard = RX.lock().unwrap();
-            tx_guard
-                .as_mut()
-                .unwrap()
-                .send(Request::new(stringify!($pkcs11_function), String::new()))
-                .unwrap();
-            let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+            send!(
+                tx_guard,
+                Request::new(stringify!($pkcs11_function), String::new())
+            );
+            let response: Response = recv!(rx_guard);
             eprintln!("parent received {:?}", response);
             if response.status() == CKR_OK {
-                let arg = from_str(response.args()).unwrap();
+                let arg = deserialize_or_return_error!(response.args());
                 unsafe {
                     *out_arg = arg;
                 }
@@ -121,12 +170,15 @@ macro_rules! fill_struct_pkcs11_function {
             eprintln!("parent: {}", stringify!($pkcs11_function));
             let mut tx_guard = TX.lock().unwrap();
             let mut rx_guard = RX.lock().unwrap();
-            let msg = Request::new(stringify!($pkcs11_function), to_string(&in_arg).unwrap());
-            tx_guard.as_mut().unwrap().send(msg).unwrap();
-            let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+            let msg = Request::new(
+                stringify!($pkcs11_function),
+                serialize_or_return_error!(&in_arg),
+            );
+            send!(tx_guard, msg);
+            let response: Response = recv!(rx_guard);
             eprintln!("parent received {:?}", response);
             if response.status() == CKR_OK {
-                let arg = from_str(response.args()).unwrap();
+                let arg = deserialize_or_return_error!(response.args());
                 unsafe {
                     *out_arg = arg;
                 }
@@ -166,12 +218,12 @@ extern "C" fn C_GetSlotList(
         slot_list,
         slot_count,
     };
-    let msg = Request::new("C_GetSlotList", to_string(&args).unwrap());
-    tx_guard.as_mut().unwrap().send(msg).unwrap();
-    let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+    let msg = Request::new("C_GetSlotList", serialize_or_return_error!(&args));
+    send!(tx_guard, msg);
+    let response: Response = recv!(rx_guard);
     eprintln!("parent received {:?}", response);
     if response.status() == CKR_OK {
-        let mut result: CGetSlotListArgs = from_str(response.args()).unwrap();
+        let mut result: CGetSlotListArgs = deserialize_or_return_error!(response.args());
         unsafe {
             *pulCount = result.slot_count;
             if !pSlotList.is_null() {
@@ -216,12 +268,12 @@ extern "C" fn C_GetMechanismList(
         mechanism_list,
         mechanism_count,
     };
-    let msg = Request::new("C_GetMechanismList", to_string(&args).unwrap());
-    tx_guard.as_mut().unwrap().send(msg).unwrap();
-    let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+    let msg = Request::new("C_GetMechanismList", serialize_or_return_error!(&args));
+    send!(tx_guard, msg);
+    let response: Response = recv!(rx_guard);
     eprintln!("parent received {:?}", response);
     if response.status() == CKR_OK {
-        let mut result: CGetMechanismListArgs = from_str(response.args()).unwrap();
+        let mut result: CGetMechanismListArgs = deserialize_or_return_error!(response.args());
         unsafe {
             *pulCount = result.mechanism_count as u64;
             if !pMechanismList.is_null() {
@@ -291,12 +343,12 @@ extern "C" fn C_OpenSession(
         flags,
         session_handle: 0,
     };
-    let msg = Request::new("C_OpenSession", to_string(&args).unwrap());
-    tx_guard.as_mut().unwrap().send(msg).unwrap();
-    let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+    let msg = Request::new("C_OpenSession", serialize_or_return_error!(&args));
+    send!(tx_guard, msg);
+    let response: Response = recv!(rx_guard);
     eprintln!("parent received {:?}", response);
     if response.status() == CKR_OK {
-        let args: COpenSessionArgs = from_str(response.args()).unwrap();
+        let args: COpenSessionArgs = deserialize_or_return_error!(response.args());
         unsafe {
             *phSession = args.session_handle;
         }
@@ -312,9 +364,12 @@ macro_rules! simple_pkcs11_function {
             eprintln!("parent: {}", stringify!($pkcs11_function));
             let mut tx_guard = TX.lock().unwrap();
             let mut rx_guard = RX.lock().unwrap();
-            let msg = Request::new(stringify!($pkcs11_function), to_string(&arg).unwrap());
-            tx_guard.as_mut().unwrap().send(msg).unwrap();
-            let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+            let msg = Request::new(
+                stringify!($pkcs11_function),
+                serialize_or_return_error!(&arg),
+            );
+            send!(tx_guard, msg);
+            let response: Response = recv!(rx_guard);
             eprintln!("parent received {:?}", response);
             response.status()
         }
@@ -362,9 +417,12 @@ macro_rules! simple_pkcs11_vector_function {
                 }
             }
             let args = (arg, vector);
-            let msg = Request::new(stringify!($pkcs11_function), to_string(&args).unwrap());
-            tx_guard.as_mut().unwrap().send(msg).unwrap();
-            let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+            let msg = Request::new(
+                stringify!($pkcs11_function),
+                serialize_or_return_error!(&args),
+            );
+            send!(tx_guard, msg);
+            let response: Response = recv!(rx_guard);
             eprintln!("parent received {:?}", response);
             response.status()
         }
@@ -386,9 +444,12 @@ macro_rules! simple_pkcs11_vector_function {
                 }
             }
             let args = (arg1, arg2, vector);
-            let msg = Request::new(stringify!($pkcs11_function), to_string(&args).unwrap());
-            tx_guard.as_mut().unwrap().send(msg).unwrap();
-            let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+            let msg = Request::new(
+                stringify!($pkcs11_function),
+                serialize_or_return_error!(&args),
+            );
+            send!(tx_guard, msg);
+            let response: Response = recv!(rx_guard);
             eprintln!("parent received {:?}", response);
             response.status()
         }
@@ -452,12 +513,12 @@ extern "C" fn C_GetAttributeValue(
                 .push(Attribute::from_raw(*pTemplate.offset(i as isize)));
         }
     }
-    let msg = Request::new("C_GetAttributeValue", to_string(&args).unwrap());
-    tx_guard.as_mut().unwrap().send(msg).unwrap();
-    let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+    let msg = Request::new("C_GetAttributeValue", serialize_or_return_error!(&args));
+    send!(tx_guard, msg);
+    let response: Response = recv!(rx_guard);
     eprintln!("parent received {:?}", response);
     if response.status() == CKR_OK {
-        let args: CGetAttributeValueArgs = from_str(response.args()).unwrap();
+        let args: CGetAttributeValueArgs = deserialize_or_return_error!(response.args());
         unsafe {
             for i in 0..ulCount {
                 args.template[i as usize].into_raw(pTemplate.offset(i as isize));
@@ -495,9 +556,9 @@ extern "C" fn C_FindObjectsInit(
                 .push(Attribute::from_raw(*pTemplate.offset(i as isize)));
         }
     }
-    let msg = Request::new("C_FindObjectsInit", to_string(&args).unwrap());
-    tx_guard.as_mut().unwrap().send(msg).unwrap();
-    let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+    let msg = Request::new("C_FindObjectsInit", serialize_or_return_error!(&args));
+    send!(tx_guard, msg);
+    let response: Response = recv!(rx_guard);
     eprintln!("parent received {:?}", response);
     response.status()
 }
@@ -516,11 +577,11 @@ extern "C" fn C_FindObjects(
         objects: Vec::new(),
         max_objects: ulMaxObjectCount,
     };
-    let msg = Request::new("C_FindObjects", to_string(&args).unwrap());
-    tx_guard.as_mut().unwrap().send(msg).unwrap();
-    let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+    let msg = Request::new("C_FindObjects", serialize_or_return_error!(&args));
+    send!(tx_guard, msg);
+    let response: Response = recv!(rx_guard);
     eprintln!("parent received {:?}", response);
-    let args: CFindObjectsArgs = from_str(response.args()).unwrap();
+    let args: CFindObjectsArgs = deserialize_or_return_error!(response.args());
     if response.status() == CKR_OK {
         unsafe {
             for i in 0..args.objects.len() {
@@ -651,9 +712,9 @@ extern "C" fn C_SignInit(
     let mut rx_guard = RX.lock().unwrap();
     let mechanism = unsafe { *pMechanism };
     let args = (hSession, Mechanism::from_raw(mechanism), hKey);
-    let msg = Request::new("C_SignInit", to_string(&args).unwrap());
-    tx_guard.as_mut().unwrap().send(msg).unwrap();
-    let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+    let msg = Request::new("C_SignInit", serialize_or_return_error!(&args));
+    send!(tx_guard, msg);
+    let response: Response = recv!(rx_guard);
     eprintln!("parent received {:?}", response);
     response.status()
 }
@@ -703,12 +764,12 @@ extern "C" fn C_Sign(
     let mut signature = Vec::with_capacity(signature_capacity as usize);
     signature.resize(signature_capacity as usize, 0);
     let args = (hSession, data, signature);
-    let msg = Request::new("C_Sign", to_string(&args).unwrap());
-    tx_guard.as_mut().unwrap().send(msg).unwrap();
-    let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+    let msg = Request::new("C_Sign", serialize_or_return_error!(&args));
+    send!(tx_guard, msg);
+    let response: Response = recv!(rx_guard);
     eprintln!("parent received {:?}", response);
     if response.status() == CKR_OK {
-        let signature: Vec<CK_BYTE> = from_str(response.args()).unwrap();
+        let signature: Vec<CK_BYTE> = deserialize_or_return_error!(response.args());
         match copy_bytes_out(signature, pSignature, signature_capacity, pulSignatureLen) {
             Ok(()) => {}
             Err(result) => return result,
@@ -915,12 +976,12 @@ extern "C" fn C_GenerateRandom(
         data: Vec::new(),
         length: ulRandomLen,
     };
-    let msg = Request::new("C_GenerateRandom", to_string(&args).unwrap());
-    tx_guard.as_mut().unwrap().send(msg).unwrap();
-    let response: Response = rx_guard.as_mut().unwrap().recv().unwrap();
+    let msg = Request::new("C_GenerateRandom", serialize_or_return_error!(&args));
+    send!(tx_guard, msg);
+    let response: Response = recv!(rx_guard);
     eprintln!("parent received {:?}", response);
     if response.status() == CKR_OK {
-        let mut result: CGenerateRandomArgs = from_str(response.args()).unwrap();
+        let mut result: CGenerateRandomArgs = deserialize_or_return_error!(response.args());
         unsafe {
             for i in 0..ulRandomLen {
                 *RandomData.offset(i as isize) = result.data[i as usize];
