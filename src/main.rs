@@ -11,7 +11,7 @@ extern crate serde_json;
 use dlopen::wrapper::{Container, WrapperApi};
 use serde_json::{from_str, to_string};
 use std::fs;
-use std::io::{self, stdin, stdout, Error, ErrorKind, Read};
+use std::io::{stdin, stdout};
 
 mod ipc;
 mod pkcs11;
@@ -21,12 +21,18 @@ use ipc::*;
 use pkcs11::*;
 use pkcs11types::*;
 
+#[allow(non_snake_case)]
 #[derive(WrapperApi)]
 struct Pkcs11Module {
     C_GetFunctionList: extern "C" fn(ppFunctionList: CK_FUNCTION_LIST_PTR_PTR) -> CK_RV,
 }
 
 fn main() {
+    // If we're running, it's because the parent forked and executed us. Any file descriptors that
+    // weren't opened with the flag CLOEXEC must be closed manually. Otherwise, there may be open
+    // pipes or other resources that can cause unexpected behavior (e.g. initially, when Firefox
+    // loaded this module, it was unable to shut down because the open file descriptors interfered
+    // with shutting down other child processes somehow).
     let mut fds_to_close = Vec::new();
     for entry in fs::read_dir("/proc/self/fd/").unwrap() {
         let path = match entry {

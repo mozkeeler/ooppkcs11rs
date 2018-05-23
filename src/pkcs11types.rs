@@ -1,5 +1,6 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
+#![allow(dead_code)]
 
 pub type CK_BYTE = ::std::os::raw::c_uchar;
 pub type CK_CHAR = CK_BYTE;

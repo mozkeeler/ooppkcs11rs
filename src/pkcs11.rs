@@ -11,6 +11,8 @@ pub struct Request {
 }
 
 impl Request {
+    // This is used in the parent but not the child.
+    #[allow(dead_code)]
     pub fn new(function: &'static str, args: String) -> Request {
         Request {
             function: String::from(function),
@@ -18,10 +20,14 @@ impl Request {
         }
     }
 
+    // This is used in the child but not the parent.
+    #[allow(dead_code)]
     pub fn function(&self) -> &str {
         &self.function
     }
 
+    // This is used in the child but not the parent.
+    #[allow(dead_code)]
     pub fn args(&self) -> &str {
         &self.args
     }
@@ -34,14 +40,20 @@ pub struct Response {
 }
 
 impl Response {
+    // This is used in the child but not the parent.
+    #[allow(dead_code)]
     pub fn new(status: CK_RV, args: String) -> Response {
         Response { status, args }
     }
 
+    // This is used in the child but not the parent.
+    #[allow(dead_code)]
     pub fn status(&self) -> CK_RV {
         self.status
     }
 
+    // This is used in the child but not the parent.
+    #[allow(dead_code)]
     pub fn args(&self) -> &str {
         &self.args
     }
@@ -99,6 +111,8 @@ impl Attribute {
     // TODO: really we want to enforce that self lives longer than the value returned. I think we
     // could do this by adding a lifetime parameter to CK_ATTRIBUTE, but I don't want to change that
     // type since it's part of the PKCS#11 API. Could we use a helper/wrapper in some way?
+    // This is used in the child but not the parent.
+    #[allow(dead_code)]
     pub fn to_raw(&self) -> CK_ATTRIBUTE {
         let ptr = match self.value {
             Some(ref value) => value.as_ptr() as CK_VOID_PTR,
@@ -111,6 +125,8 @@ impl Attribute {
         }
     }
 
+    // This is used in the parent but not the child.
+    #[allow(dead_code)]
     pub fn into_raw(&self, attribute: *mut CK_ATTRIBUTE) {
         match self.value {
             Some(ref value) => unsafe {
@@ -139,6 +155,8 @@ pub struct Mechanism {
 }
 
 impl Mechanism {
+    // This is used in the parent but not the child.
+    #[allow(dead_code)]
     pub fn from_raw(mechanism: CK_MECHANISM) -> Mechanism {
         let parameter = if !mechanism.pParameter.is_null() {
             let byte_ptr = mechanism.pParameter as *const u8;
@@ -159,6 +177,8 @@ impl Mechanism {
         }
     }
 
+    // This is used in the child but not the parent.
+    #[allow(dead_code)]
     pub fn to_raw(&self) -> CK_MECHANISM {
         let ptr = match self.parameter {
             Some(ref parameter) => parameter.as_ptr() as CK_VOID_PTR,
@@ -171,6 +191,8 @@ impl Mechanism {
         }
     }
 
+    // This is used in the parent but not the child.
+    #[allow(dead_code)]
     pub fn into_raw(&self, mechanism: *mut CK_MECHANISM) {
         match self.parameter {
             Some(ref parameter) => unsafe {
