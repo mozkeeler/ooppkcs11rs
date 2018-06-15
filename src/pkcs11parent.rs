@@ -9,12 +9,17 @@ use std::io::Write;
 use std::ops::DerefMut;
 use std::process::{ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Mutex;
+use std::time::Duration;
+use timeout_readwrite::{TimeoutReader, TimeoutWriter};
 
 use ipc::*;
 use pkcs11::*;
 use pkcs11types::*;
 
-type State = (IpcSender<ChildStdin>, IpcReceiver<ChildStdout>);
+type State = (
+    IpcSender<TimeoutWriter<ChildStdin>>,
+    IpcReceiver<TimeoutReader<ChildStdout>>,
+);
 
 lazy_static! {
     static ref STATE: Mutex<Option<State>> = Mutex::new(None);
@@ -62,8 +67,10 @@ extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
         Some(stdout) => stdout,
         None => return CKR_GENERAL_ERROR,
     };
-    let mut tx = IpcSender::new(write_to_child);
-    let mut rx = IpcReceiver::new(read_from_child);
+    let timeout = Some(Duration::new(7, 0));
+    let mut tx = IpcSender::new(TimeoutWriter::new(write_to_child, timeout));
+    let timeout = Some(Duration::new(7, 0));
+    let mut rx = IpcReceiver::new(TimeoutReader::new(read_from_child, timeout));
     let args = match get_library_to_load_path(pInitArgs) {
         Ok(args) => args,
         Err(e) => return e,
@@ -83,27 +90,43 @@ extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
 }
 
 macro_rules! send {
-    ($state_guard:ident, $to_send:expr) => {
-        match $state_guard.as_mut().unwrap().0.send($to_send) {
+    ($state_guard:ident, $to_send:expr) => {{
+        let result = {
+            let state = match $state_guard.as_mut() {
+                Some(state) => state,
+                None => return CKR_GENERAL_ERROR,
+            };
+            state.0.send($to_send)
+        };
+        match result {
             Ok(()) => {}
             Err(e) => {
                 eprintln!("error sending to child: {}", e);
+                let _ = $state_guard.take();
                 return CKR_GENERAL_ERROR;
             }
         }
-    };
+    }};
 }
 
 macro_rules! recv {
-    ($state_guard:ident) => {
-        match $state_guard.as_mut().unwrap().1.recv() {
+    ($state_guard:ident) => {{
+        let result = {
+            let state = match $state_guard.as_mut() {
+                Some(state) => state,
+                None => return CKR_GENERAL_ERROR,
+            };
+            state.1.recv()
+        };
+        match result {
             Ok(result) => result,
             Err(e) => {
                 eprintln!("error reading from child: {}", e);
+                let _ = $state_guard.take();
                 return CKR_GENERAL_ERROR;
             }
         }
-    };
+    }};
 }
 
 extern "C" fn C_Finalize(pReserved: CK_VOID_PTR) -> CK_RV {

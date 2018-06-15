@@ -6,6 +6,7 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
+extern crate timeout_readwrite;
 
 mod ipc;
 mod pkcs11;
