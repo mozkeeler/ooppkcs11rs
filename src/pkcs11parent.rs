@@ -14,10 +14,10 @@ use ipc::*;
 use pkcs11::*;
 use pkcs11types::*;
 
+type State = (IpcSender<ChildStdin>, IpcReceiver<ChildStdout>);
+
 lazy_static! {
-    // NB: Acquire these in the order they're declared here.
-    static ref TX: Mutex<Option<IpcSender<ChildStdin>>> = Mutex::new(None);
-    static ref RX: Mutex<Option<IpcReceiver<ChildStdout>>> = Mutex::new(None);
+    static ref STATE: Mutex<Option<State>> = Mutex::new(None);
 }
 
 fn get_library_to_load_path(init_args: *const CK_C_INITIALIZE_ARGS) -> Result<String, CK_RV> {
@@ -42,8 +42,7 @@ fn get_library_to_load_path(init_args: *const CK_C_INITIALIZE_ARGS) -> Result<St
 
 extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
     eprintln!("parent: C_Initialize");
-    let mut tx_guard = TX.lock().unwrap();
-    let mut rx_guard = RX.lock().unwrap();
+    let mut state_guard = STATE.lock().unwrap();
     let mut child = match Command::new("/home/keeler/src/ooppkcs11rs/target/debug/ooppkcs11rs")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -79,14 +78,13 @@ extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
         Err(_) => return CKR_GENERAL_ERROR,
     };
     eprintln!("parent received {:?}", msg_back);
-    *tx_guard = Some(tx);
-    *rx_guard = Some(rx);
+    *state_guard = Some((tx, rx));
     msg_back.status()
 }
 
 macro_rules! send {
-    ($tx_guard:ident, $to_send:expr) => {
-        match $tx_guard.as_mut().unwrap().send($to_send) {
+    ($state_guard:ident, $to_send:expr) => {
+        match $state_guard.as_mut().unwrap().0.send($to_send) {
             Ok(()) => {}
             Err(e) => {
                 eprintln!("error sending to child: {}", e);
@@ -97,8 +95,8 @@ macro_rules! send {
 }
 
 macro_rules! recv {
-    ($rx_guard:ident) => {
-        match $rx_guard.as_mut().unwrap().recv() {
+    ($state_guard:ident) => {
+        match $state_guard.as_mut().unwrap().1.recv() {
             Ok(result) => result,
             Err(e) => {
                 eprintln!("error reading from child: {}", e);
@@ -110,10 +108,9 @@ macro_rules! recv {
 
 extern "C" fn C_Finalize(pReserved: CK_VOID_PTR) -> CK_RV {
     eprintln!("parent: C_Finalize");
-    let mut tx_guard = TX.lock().unwrap();
-    let mut rx_guard = RX.lock().unwrap();
-    send!(tx_guard, Request::new("C_Finalize", String::new()));
-    let response: Response = recv!(rx_guard);
+    let mut state_guard = STATE.lock().unwrap();
+    send!(state_guard, Request::new("C_Finalize", String::new()));
+    let response: Response = recv!(state_guard);
     eprintln!("parent received {:?}", response);
     response.status()
 }
@@ -146,13 +143,12 @@ macro_rules! fill_struct_pkcs11_function {
     ($pkcs11_function:ident, $out_arg_type:ty) => {
         extern "C" fn $pkcs11_function(out_arg: $out_arg_type) -> CK_RV {
             eprintln!("parent: {}", stringify!($pkcs11_function));
-            let mut tx_guard = TX.lock().unwrap();
-            let mut rx_guard = RX.lock().unwrap();
+            let mut state_guard = STATE.lock().unwrap();
             send!(
-                tx_guard,
+                state_guard,
                 Request::new(stringify!($pkcs11_function), String::new())
             );
-            let response: Response = recv!(rx_guard);
+            let response: Response = recv!(state_guard);
             eprintln!("parent received {:?}", response);
             if response.status() == CKR_OK {
                 let arg = deserialize_or_return_error!(response.args());
@@ -168,14 +164,13 @@ macro_rules! fill_struct_pkcs11_function {
     ($pkcs11_function:ident, $in_arg_type:ty, $out_arg_type:ty) => {
         extern "C" fn $pkcs11_function(in_arg: $in_arg_type, out_arg: $out_arg_type) -> CK_RV {
             eprintln!("parent: {}", stringify!($pkcs11_function));
-            let mut tx_guard = TX.lock().unwrap();
-            let mut rx_guard = RX.lock().unwrap();
+            let mut state_guard = STATE.lock().unwrap();
             let msg = Request::new(
                 stringify!($pkcs11_function),
                 serialize_or_return_error!(&in_arg),
             );
-            send!(tx_guard, msg);
-            let response: Response = recv!(rx_guard);
+            send!(state_guard, msg);
+            let response: Response = recv!(state_guard);
             eprintln!("parent received {:?}", response);
             if response.status() == CKR_OK {
                 let arg = deserialize_or_return_error!(response.args());
@@ -198,8 +193,7 @@ extern "C" fn C_GetSlotList(
     pulCount: CK_ULONG_PTR,
 ) -> CK_RV {
     eprintln!("parent: C_GetSlotList");
-    let mut tx_guard = TX.lock().unwrap();
-    let mut rx_guard = RX.lock().unwrap();
+    let mut state_guard = STATE.lock().unwrap();
     let slot_list = if pSlotList.is_null() {
         None
     } else {
@@ -219,8 +213,8 @@ extern "C" fn C_GetSlotList(
         slot_count,
     };
     let msg = Request::new("C_GetSlotList", serialize_or_return_error!(&args));
-    send!(tx_guard, msg);
-    let response: Response = recv!(rx_guard);
+    send!(state_guard, msg);
+    let response: Response = recv!(state_guard);
     eprintln!("parent received {:?}", response);
     if response.status() == CKR_OK {
         let mut result: CGetSlotListArgs = deserialize_or_return_error!(response.args());
@@ -251,8 +245,7 @@ extern "C" fn C_GetMechanismList(
     pulCount: CK_ULONG_PTR,
 ) -> CK_RV {
     eprintln!("parent: C_GetMechanismList");
-    let mut tx_guard = TX.lock().unwrap();
-    let mut rx_guard = RX.lock().unwrap();
+    let mut state_guard = STATE.lock().unwrap();
     let mechanism_list = if pMechanismList.is_null() {
         None
     } else {
@@ -269,8 +262,8 @@ extern "C" fn C_GetMechanismList(
         mechanism_count,
     };
     let msg = Request::new("C_GetMechanismList", serialize_or_return_error!(&args));
-    send!(tx_guard, msg);
-    let response: Response = recv!(rx_guard);
+    send!(state_guard, msg);
+    let response: Response = recv!(state_guard);
     eprintln!("parent received {:?}", response);
     if response.status() == CKR_OK {
         let mut result: CGetMechanismListArgs = deserialize_or_return_error!(response.args());
@@ -336,16 +329,15 @@ extern "C" fn C_OpenSession(
     phSession: CK_SESSION_HANDLE_PTR,
 ) -> CK_RV {
     eprintln!("parent: C_OpenSession");
-    let mut tx_guard = TX.lock().unwrap();
-    let mut rx_guard = RX.lock().unwrap();
+    let mut state_guard = STATE.lock().unwrap();
     let args = COpenSessionArgs {
         slot_id: slotID,
         flags,
         session_handle: 0,
     };
     let msg = Request::new("C_OpenSession", serialize_or_return_error!(&args));
-    send!(tx_guard, msg);
-    let response: Response = recv!(rx_guard);
+    send!(state_guard, msg);
+    let response: Response = recv!(state_guard);
     eprintln!("parent received {:?}", response);
     if response.status() == CKR_OK {
         let args: COpenSessionArgs = deserialize_or_return_error!(response.args());
@@ -362,14 +354,13 @@ macro_rules! simple_pkcs11_function {
     ($pkcs11_function:ident, $arg_type:ty) => {
         extern "C" fn $pkcs11_function(arg: $arg_type) -> CK_RV {
             eprintln!("parent: {}", stringify!($pkcs11_function));
-            let mut tx_guard = TX.lock().unwrap();
-            let mut rx_guard = RX.lock().unwrap();
+            let mut state_guard = STATE.lock().unwrap();
             let msg = Request::new(
                 stringify!($pkcs11_function),
                 serialize_or_return_error!(&arg),
             );
-            send!(tx_guard, msg);
-            let response: Response = recv!(rx_guard);
+            send!(state_guard, msg);
+            let response: Response = recv!(state_guard);
             eprintln!("parent received {:?}", response);
             response.status()
         }
@@ -408,8 +399,7 @@ macro_rules! simple_pkcs11_vector_function {
             len: CK_ULONG,
         ) -> CK_RV {
             eprintln!("parent: {}", stringify!($pkcs11_function));
-            let mut tx_guard = TX.lock().unwrap();
-            let mut rx_guard = RX.lock().unwrap();
+            let mut state_guard = STATE.lock().unwrap();
             let mut vector = Vec::with_capacity(len as usize);
             unsafe {
                 for i in 0..len {
@@ -421,8 +411,8 @@ macro_rules! simple_pkcs11_vector_function {
                 stringify!($pkcs11_function),
                 serialize_or_return_error!(&args),
             );
-            send!(tx_guard, msg);
-            let response: Response = recv!(rx_guard);
+            send!(state_guard, msg);
+            let response: Response = recv!(state_guard);
             eprintln!("parent received {:?}", response);
             response.status()
         }
@@ -435,8 +425,7 @@ macro_rules! simple_pkcs11_vector_function {
             len: CK_ULONG,
         ) -> CK_RV {
             eprintln!("parent: {}", stringify!($pkcs11_function));
-            let mut tx_guard = TX.lock().unwrap();
-            let mut rx_guard = RX.lock().unwrap();
+            let mut state_guard = STATE.lock().unwrap();
             let mut vector = Vec::with_capacity(len as usize);
             unsafe {
                 for i in 0..len {
@@ -448,8 +437,8 @@ macro_rules! simple_pkcs11_vector_function {
                 stringify!($pkcs11_function),
                 serialize_or_return_error!(&args),
             );
-            send!(tx_guard, msg);
-            let response: Response = recv!(rx_guard);
+            send!(state_guard, msg);
+            let response: Response = recv!(state_guard);
             eprintln!("parent received {:?}", response);
             response.status()
         }
@@ -500,8 +489,7 @@ extern "C" fn C_GetAttributeValue(
     ulCount: CK_ULONG,
 ) -> CK_RV {
     eprintln!("parent: C_GetAttributeValue");
-    let mut tx_guard = TX.lock().unwrap();
-    let mut rx_guard = RX.lock().unwrap();
+    let mut state_guard = STATE.lock().unwrap();
     let mut args = CGetAttributeValueArgs {
         session_handle: hSession,
         object_handle: hObject,
@@ -514,8 +502,8 @@ extern "C" fn C_GetAttributeValue(
         }
     }
     let msg = Request::new("C_GetAttributeValue", serialize_or_return_error!(&args));
-    send!(tx_guard, msg);
-    let response: Response = recv!(rx_guard);
+    send!(state_guard, msg);
+    let response: Response = recv!(state_guard);
     eprintln!("parent received {:?}", response);
     if response.status() == CKR_OK {
         let args: CGetAttributeValueArgs = deserialize_or_return_error!(response.args());
@@ -544,8 +532,7 @@ extern "C" fn C_FindObjectsInit(
     ulCount: CK_ULONG,
 ) -> CK_RV {
     eprintln!("parent: C_FindObjectsInit");
-    let mut tx_guard = TX.lock().unwrap();
-    let mut rx_guard = RX.lock().unwrap();
+    let mut state_guard = STATE.lock().unwrap();
     let mut args = CFindObjectsInitArgs {
         session_handle: hSession,
         template: Vec::new(),
@@ -557,8 +544,8 @@ extern "C" fn C_FindObjectsInit(
         }
     }
     let msg = Request::new("C_FindObjectsInit", serialize_or_return_error!(&args));
-    send!(tx_guard, msg);
-    let response: Response = recv!(rx_guard);
+    send!(state_guard, msg);
+    let response: Response = recv!(state_guard);
     eprintln!("parent received {:?}", response);
     response.status()
 }
@@ -570,16 +557,15 @@ extern "C" fn C_FindObjects(
     pulObjectCount: CK_ULONG_PTR,
 ) -> CK_RV {
     eprintln!("parent: C_FindObjects");
-    let mut tx_guard = TX.lock().unwrap();
-    let mut rx_guard = RX.lock().unwrap();
+    let mut state_guard = STATE.lock().unwrap();
     let mut args = CFindObjectsArgs {
         session_handle: hSession,
         objects: Vec::new(),
         max_objects: ulMaxObjectCount,
     };
     let msg = Request::new("C_FindObjects", serialize_or_return_error!(&args));
-    send!(tx_guard, msg);
-    let response: Response = recv!(rx_guard);
+    send!(state_guard, msg);
+    let response: Response = recv!(state_guard);
     eprintln!("parent received {:?}", response);
     let args: CFindObjectsArgs = deserialize_or_return_error!(response.args());
     if response.status() == CKR_OK {
@@ -708,13 +694,12 @@ extern "C" fn C_SignInit(
     hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
     eprintln!("parent: C_SignInit");
-    let mut tx_guard = TX.lock().unwrap();
-    let mut rx_guard = RX.lock().unwrap();
+    let mut state_guard = STATE.lock().unwrap();
     let mechanism = unsafe { *pMechanism };
     let args = (hSession, Mechanism::from_raw(mechanism), hKey);
     let msg = Request::new("C_SignInit", serialize_or_return_error!(&args));
-    send!(tx_guard, msg);
-    let response: Response = recv!(rx_guard);
+    send!(state_guard, msg);
+    let response: Response = recv!(state_guard);
     eprintln!("parent received {:?}", response);
     response.status()
 }
@@ -757,16 +742,15 @@ extern "C" fn C_Sign(
     pulSignatureLen: CK_ULONG_PTR,
 ) -> CK_RV {
     eprintln!("parent: C_Sign");
-    let mut tx_guard = TX.lock().unwrap();
-    let mut rx_guard = RX.lock().unwrap();
+    let mut state_guard = STATE.lock().unwrap();
     let data = copy_bytes_in(pData, ulDataLen);
     let signature_capacity = unsafe { *pulSignatureLen };
     let mut signature = Vec::with_capacity(signature_capacity as usize);
     signature.resize(signature_capacity as usize, 0);
     let args = (hSession, data, signature);
     let msg = Request::new("C_Sign", serialize_or_return_error!(&args));
-    send!(tx_guard, msg);
-    let response: Response = recv!(rx_guard);
+    send!(state_guard, msg);
+    let response: Response = recv!(state_guard);
     eprintln!("parent received {:?}", response);
     if response.status() == CKR_OK {
         let signature: Vec<CK_BYTE> = deserialize_or_return_error!(response.args());
@@ -969,16 +953,15 @@ extern "C" fn C_GenerateRandom(
     ulRandomLen: CK_ULONG,
 ) -> CK_RV {
     eprintln!("parent: C_GenerateRandom");
-    let mut tx_guard = TX.lock().unwrap();
-    let mut rx_guard = RX.lock().unwrap();
+    let mut state_guard = STATE.lock().unwrap();
     let mut args = CGenerateRandomArgs {
         session_handle: hSession,
         data: Vec::new(),
         length: ulRandomLen,
     };
     let msg = Request::new("C_GenerateRandom", serialize_or_return_error!(&args));
-    send!(tx_guard, msg);
-    let response: Response = recv!(rx_guard);
+    send!(state_guard, msg);
+    let response: Response = recv!(state_guard);
     eprintln!("parent received {:?}", response);
     if response.status() == CKR_OK {
         let mut result: CGenerateRandomArgs = deserialize_or_return_error!(response.args());
