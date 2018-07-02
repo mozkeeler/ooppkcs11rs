@@ -45,10 +45,25 @@ fn get_library_to_load_path(init_args: *const CK_C_INITIALIZE_ARGS) -> Result<St
     }
 }
 
+fn get_ooppkcs11rs_binary_path() -> Result<String, CK_RV> {
+    let ooppkcs11rs_binary_path_env_var = CString::new("OOPPKCS11RS_BINARY_PATH").unwrap();
+    unsafe {
+        let binary_path = getenv(ooppkcs11rs_binary_path_env_var.as_ptr());
+        if !binary_path.is_null() {
+            return Ok(CStr::from_ptr(binary_path).to_string_lossy().into_owned());
+        }
+    }
+    Err(CKR_GENERAL_ERROR)
+}
+
 extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
     eprintln!("parent: C_Initialize");
     let mut state_guard = STATE.lock().unwrap();
-    let mut child = match Command::new("/home/keeler/src/ooppkcs11rs/target/debug/ooppkcs11rs")
+    let ooppkcs11rs_binary_path = match get_ooppkcs11rs_binary_path() {
+        Ok(path) => path,
+        Err(e) => return e,
+    };
+    let mut child = match Command::new(ooppkcs11rs_binary_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
