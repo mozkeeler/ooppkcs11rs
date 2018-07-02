@@ -2,7 +2,3 @@ target/
 **/*.rs.bk
 Cargo.lock
 **/.*.swp
-util/*.db
-util/pkcs11.txt
-util/test
-util/*.so
