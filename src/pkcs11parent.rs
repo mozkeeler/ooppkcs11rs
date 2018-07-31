@@ -464,6 +464,7 @@ macro_rules! simple_pkcs11_vector_function {
         ) -> CK_RV {
             eprintln!("parent: {}", stringify!($pkcs11_function));
             let mut state_guard = STATE.lock().unwrap();
+            // TODO: data can be null (e.g. protected auth C_Login), so that needs to be handled
             let mut vector = Vec::with_capacity(len as usize);
             unsafe {
                 for i in 0..len {
