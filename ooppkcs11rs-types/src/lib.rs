@@ -2,6 +2,10 @@
 #![allow(non_snake_case)]
 #![allow(dead_code)]
 
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
+
 pub type CK_BYTE = ::std::os::raw::c_uchar;
 pub type CK_CHAR = CK_BYTE;
 pub type CK_UTF8CHAR = CK_BYTE;

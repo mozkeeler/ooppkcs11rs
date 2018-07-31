@@ -2,4 +2,5 @@
 
 members = [
     "ooppkcs11rs",
+    "ooppkcs11rs-types",
 ]

@@ -7,19 +7,19 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
+extern crate ooppkcs11rs_types;
 
 use dlopen::wrapper::{Container, WrapperApi};
 use serde_json::{from_str, to_string};
 use std::fs;
 use std::io::{stdin, stdout};
+use ooppkcs11rs_types::*;
 
 mod ipc;
 mod pkcs11;
-mod pkcs11types;
 
 use ipc::*;
 use pkcs11::*;
-use pkcs11types::*;
 
 #[allow(non_snake_case)]
 #[derive(WrapperApi)]

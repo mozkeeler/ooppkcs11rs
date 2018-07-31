@@ -1,0 +1,8 @@
+[package]
+name = "ooppkcs11rs-types"
+version = "0.1.0"
+authors = ["Keeler <mozkeeler@gmail.com>"]
+
+[dependencies]
+serde = "1.0.45"
+serde_derive = "1.0.45"

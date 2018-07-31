@@ -7,13 +7,13 @@ extern crate serde;
 extern crate serde_derive;
 extern crate serde_json;
 extern crate timeout_readwrite;
+extern crate ooppkcs11rs_types;
 
 mod ipc;
 mod pkcs11;
 mod pkcs11parent;
-mod pkcs11types;
 
-use pkcs11types::*;
+use ooppkcs11rs_types::*;
 
 #[allow(non_snake_case)]
 #[no_mangle]

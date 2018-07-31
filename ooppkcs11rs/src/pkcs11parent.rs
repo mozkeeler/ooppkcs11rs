@@ -11,10 +11,10 @@ use std::process::{ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
 use timeout_readwrite::{TimeoutReader, TimeoutWriter};
+use ooppkcs11rs_types::*;
 
 use ipc::*;
 use pkcs11::*;
-use pkcs11types::*;
 
 type State = (
     IpcSender<TimeoutWriter<ChildStdin>>,

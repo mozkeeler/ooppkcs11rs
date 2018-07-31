@@ -5,7 +5,7 @@ authors = ["Keeler <mozkeeler@gmail.com>"]
 
 [lib]
 name = "ooppkcs11rs"
-crate-type = ["dylib"]
+crate-type = ["cdylib"]
 
 [dependencies]
 byteorder = "1.2.3"
@@ -17,3 +17,4 @@ serde = "1.0.45"
 serde_derive = "1.0.45"
 serde_json = "1.0.17"
 timeout-readwrite = "0.1.0"
+ooppkcs11rs-types = { path = "../ooppkcs11rs-types" }
