@@ -1,7 +1,7 @@
 // Why do I need these here when I don't need them elsewhere?
+use ooppkcs11rs_types::*;
 use std::os;
 use std::ptr;
-use ooppkcs11rs_types::*;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Request {

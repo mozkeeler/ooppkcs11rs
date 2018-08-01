@@ -1,0 +1,11 @@
+[package]
+name = "ooppkcs11rs-test"
+version = "0.1.0"
+authors = ["Keeler <mozkeeler@gmail.com>"]
+
+[dependencies]
+ooppkcs11rs-types = { path = "../ooppkcs11rs-types" }
+
+[lib]
+name = "ooppkcs11rs_test"
+crate-type = ["cdylib"]

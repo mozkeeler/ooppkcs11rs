@@ -6,14 +6,14 @@ extern crate libc;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
-extern crate serde_json;
 extern crate ooppkcs11rs_types;
+extern crate serde_json;
 
 use dlopen::wrapper::{Container, WrapperApi};
+use ooppkcs11rs_types::*;
 use serde_json::{from_str, to_string};
 use std::fs;
 use std::io::{stdin, stdout};
-use ooppkcs11rs_types::*;
 
 mod ipc;
 mod pkcs11;

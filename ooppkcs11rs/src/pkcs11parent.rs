@@ -3,6 +3,7 @@
 #![allow(unused)]
 
 use libc::getenv;
+use ooppkcs11rs_types::*;
 use serde_json::{from_str, to_string};
 use std::ffi::{CStr, CString};
 use std::io::Write;
@@ -11,7 +12,6 @@ use std::process::{ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
 use timeout_readwrite::{TimeoutReader, TimeoutWriter};
-use ooppkcs11rs_types::*;
 
 use ipc::*;
 use pkcs11::*;

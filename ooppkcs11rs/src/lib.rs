@@ -5,9 +5,9 @@ extern crate libc;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+extern crate ooppkcs11rs_types;
 extern crate serde_json;
 extern crate timeout_readwrite;
-extern crate ooppkcs11rs_types;
 
 mod ipc;
 mod pkcs11;
