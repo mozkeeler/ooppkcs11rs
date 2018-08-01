@@ -34,7 +34,7 @@ fn main() {
     // loaded this module, it was unable to shut down because the open file descriptors interfered
     // with shutting down other child processes somehow).
     let mut fds_to_close = Vec::new();
-    for entry in fs::read_dir("/proc/self/fd/").unwrap() {
+    for entry in fs::read_dir("/dev/fd/").unwrap() {
         let path = match entry {
             Ok(entry) => entry.path(),
             Err(_) => continue,
