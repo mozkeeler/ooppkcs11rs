@@ -12,6 +12,7 @@ extern crate serde_json;
 use dlopen::wrapper::{Container, WrapperApi};
 use ooppkcs11rs_types::*;
 use serde_json::{from_str, to_string};
+use std::env;
 use std::fs;
 use std::io::{stdin, stdout};
 
@@ -25,6 +26,19 @@ use pkcs11::*;
 #[derive(WrapperApi)]
 struct Pkcs11Module {
     C_GetFunctionList: extern "C" fn(ppFunctionList: CK_FUNCTION_LIST_PTR_PTR) -> CK_RV,
+}
+
+macro_rules! log {
+    ($msg:expr, $val:expr) => {
+        if let Ok(_) = env::var("OOPPKCS11RS_DEBUG_SPEW") {
+            eprintln!($msg, $val);
+        }
+    };
+    ($msg:expr, $val1:expr, $val2:expr) => {
+        if let Ok(_) = env::var("OOPPKCS11RS_DEBUG_SPEW") {
+            eprintln!($msg, $val1, $val2);
+        }
+    };
 }
 
 fn main() {
@@ -59,7 +73,7 @@ fn main() {
     if msg.function() != "C_Initialize" {
         panic!("unexpected first message from parent");
     }
-    eprintln!("loading library at '{}'", msg.args());
+    log!("loading library at '{}'", msg.args());
     let module: Container<Pkcs11Module> = unsafe { Container::load(msg.args()) }.unwrap();
     let mut function_list_ptr: CK_FUNCTION_LIST_PTR = std::ptr::null();
     module.C_GetFunctionList(&mut function_list_ptr);
@@ -67,7 +81,7 @@ fn main() {
         let null_args = std::ptr::null::<CK_C_INITIALIZE_ARGS>();
         (*function_list_ptr).C_Initialize.unwrap()(null_args as *mut CK_C_INITIALIZE_ARGS)
     };
-    eprintln!("C_Initialize: {}", result);
+    log!("C_Initialize: {}", result);
     tx.send(Response::new(result, String::new())).unwrap();
     if result != CKR_OK {
         return;
@@ -78,11 +92,11 @@ fn main() {
         let msg: Request = match rx.recv() {
             Ok(msg) => msg,
             Err(e) => {
-                eprintln!("error receiving request from parent: {}", e);
+                log!("error receiving request from parent: {}", e);
                 return;
             }
         };
-        eprintln!("child received {:?}", msg);
+        log!("child received {:?}", msg);
         let response = match msg.function() {
             "C_Finalize" => {
                 keep_going = false;
@@ -113,12 +127,12 @@ fn main() {
             Ok(response) => match tx.send(response) {
                 Ok(()) => {}
                 Err(e) => {
-                    eprintln!("error sending response to parent: '{}'", e);
+                    log!("error sending response to parent: '{}'", e);
                     keep_going = false;
                 }
             },
             Err(e) => {
-                eprintln!("error performing operation: '{}'", e);
+                log!("error performing operation: '{}'", e);
                 keep_going = false;
             }
         }
@@ -129,7 +143,7 @@ fn c_finalize(fs: CK_FUNCTION_LIST_PTR) -> Result<Response, serde_json::Error> {
     let result = unsafe {
         (*fs).C_Finalize.unwrap()(std::ptr::null::<std::os::raw::c_void>() as CK_VOID_PTR)
     };
-    eprintln!("C_Finalize: {}", result);
+    log!("C_Finalize: {}", result);
     Ok(Response::new(result, String::new()))
 }
 
@@ -138,7 +152,7 @@ macro_rules! fill_struct_pkcs11_function {
         fn $function_name(fs: CK_FUNCTION_LIST_PTR) -> Result<Response, serde_json::Error> {
             let mut out_arg: $out_arg_type = Default::default();
             let result = unsafe { (*fs).$pkcs11_function.unwrap()(&mut out_arg) };
-            eprintln!("{}: {}", stringify!($pkcs11_function), result);
+            log!("{}: {}", stringify!($pkcs11_function), result);
             let payload = if result == CKR_OK {
                 to_string(&out_arg)?
             } else {
@@ -155,7 +169,7 @@ macro_rules! fill_struct_pkcs11_function {
             let in_arg: $in_arg_type = from_str(msg.args())?;
             let mut out_arg: $out_arg_type = Default::default();
             let result = unsafe { (*fs).$pkcs11_function.unwrap()(in_arg, &mut out_arg) };
-            eprintln!("{}: {}", stringify!($pkcs11_function), result);
+            log!("{}: {}", stringify!($pkcs11_function), result);
             let payload = if result == CKR_OK {
                 to_string(&out_arg)?
             } else {
@@ -184,7 +198,7 @@ fn c_get_slot_list(msg: Request, fs: CK_FUNCTION_LIST_PTR) -> Result<Response, s
             &mut args.slot_count,
         )
     };
-    eprintln!("C_GetSlotList: {}", result);
+    log!("C_GetSlotList: {}", result);
     let msg_back = if result == CKR_OK {
         match &mut args.slot_list {
             &mut Some(ref mut slot_list) => unsafe { slot_list.set_len(args.slot_count as usize) },
@@ -219,7 +233,7 @@ fn c_get_mechanism_list(
             &mut args.mechanism_count,
         )
     };
-    eprintln!("C_GetMechanismList: {}", result);
+    log!("C_GetMechanismList: {}", result);
     let msg_back = if result == CKR_OK {
         match &mut args.mechanism_list {
             &mut Some(ref mut mechanism_list) => unsafe {
@@ -245,7 +259,7 @@ fn c_open_session(msg: Request, fs: CK_FUNCTION_LIST_PTR) -> Result<Response, se
             &mut args.session_handle,
         )
     };
-    eprintln!("C_OpenSession: {}", result);
+    log!("C_OpenSession: {}", result);
     let msg_back = if result == CKR_OK {
         Response::new(CKR_OK, to_string(&args)?)
     } else {
@@ -314,7 +328,7 @@ macro_rules! simple_pkcs11_function {
         ) -> Result<Response, serde_json::Error> {
             let arg: $arg_type = from_str(msg.args())?;
             let result = unsafe { (*fs).$pkcs11_function.unwrap()(arg) };
-            eprintln!("{}: {}", stringify!($pkcs11_function), result);
+            log!("{}: {}", stringify!($pkcs11_function), result);
             Ok(Response::new(result, String::new()))
         }
     };
